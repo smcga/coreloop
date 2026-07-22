@@ -134,7 +134,10 @@ The exact API will evolve through the playable test-bed, but a module will event
 interface GameplayModule<TState> {
   readonly id: string;
   initialiseEncounter(brief: EncounterBrief, seed: number): TState;
-  handleAction(state: Readonly<TState>, action: GameplayAction): GameplayResult<TState>;
+  handleAction(
+    state: Readonly<TState>,
+    action: GameplayAction,
+  ): GameplayResult<TState>;
   getProgress(state: Readonly<TState>): EncounterProgress;
   createReport(state: Readonly<TState>): EncounterReport;
   serialise(state: Readonly<TState>): unknown;
@@ -191,13 +194,13 @@ Internal names remain generic. Theme-specific nouns are presentation data.
 
 Examples:
 
-| Generic concept | Music theme | Possible football theme |
-|---|---|---|
-| encounter | gig | match |
-| passive modifier | fan | supporter |
-| playable object | sample | player/action |
-| consumable | tool | tactic |
-| attached modifier | FX | training/trait |
+| Generic concept   | Music theme | Possible football theme |
+| ----------------- | ----------- | ----------------------- |
+| encounter         | gig         | match                   |
+| passive modifier  | fan         | supporter               |
+| playable object   | sample      | player/action           |
+| consumable        | tool        | tactic                  |
+| attached modifier | FX          | training/trait          |
 
 Do not rename internal types for each theme.
 

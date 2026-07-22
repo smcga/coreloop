@@ -1,6 +1,6 @@
 # Development workflow
 
-This document describes how Core Loop work should be planned, implemented and verified. Concrete commands will be finalised by Issue #1; until then, `docs/issue-1-brief.md` is the bootstrap specification.
+This document describes how Core Loop work should be planned, implemented and verified. The root npm scripts are the canonical development and verification commands; `docs/issue-1-brief.md` records the bootstrap specification.
 
 ## Delivery philosophy
 

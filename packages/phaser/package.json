@@ -1,0 +1,10 @@
+{
+  "name": "@core-loop/phaser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "phaser": "^3.90.0"
+  }
+}

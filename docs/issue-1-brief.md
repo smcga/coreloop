@@ -287,12 +287,15 @@ The implementation PR should include:
 Closes #1
 
 ## Visible result
+
 Describe the deployed/playable Threshold Lab flow.
 
 ## Architecture
+
 Summarise the workspace and package boundaries.
 
 ## Verification
+
 - `npm run format:check`
 - `npm run lint`
 - `npm run typecheck`
@@ -300,8 +303,10 @@ Summarise the workspace and package boundaries.
 - `npm run build`
 
 ## Manual/mobile checks
+
 Describe desktop, physical phone portrait and landscape checks. Include the deployed or preview URL when available.
 
 ## Deferred to Issue #2
+
 List any intentionally temporary app state or other known next-step work.
 ```

@@ -12,6 +12,45 @@ The framework is intended for games that share a broad structure:
 
 The encounter itself is deliberately replaceable. A future game might build a song, play football, solve a timing challenge or use another mechanic entirely while reusing the surrounding run, economy, shop, modifier and progression systems.
 
+## Quick start
+
+Prerequisites: Node.js 22 (see `.nvmrc`) and npm.
+
+```bash
+npm install
+npm run dev
+```
+
+Threshold Lab is served by Vite. The production build uses the `/coreloop/` base path and is deployed to [GitHub Pages](https://smcga.github.io/coreloop/) after changes reach `main`.
+
+Run the complete repository verification suite with:
+
+```bash
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+### Test on a phone
+
+Connect the phone and development computer to the same trusted network, then run:
+
+```bash
+npm run dev -- --host
+```
+
+Open Vite's displayed network URL on the phone. Verify the menu and experiment in portrait and landscape, including selection, the five-tile limit, submit, reset, and the menu route. No interaction requires hover, and the page prevents scrolling during play.
+
+## Workspace
+
+- `packages/core` — browser-independent framework boundary (the run engine starts in Issue #2).
+- `packages/content` — future content-loading boundary.
+- `packages/phaser` — shared Phaser-facing integration helpers.
+- `packages/testing` — future reusable scenario-test helpers.
+- `apps/threshold-lab` — the playable Phaser test-bed and temporary Issue #1 selection state.
+
 ## Project status
 
 The repository is at the planning and bootstrap stage. Development starts with a small touch-first test-bed called **Threshold Lab** so every framework addition can be verified in a playable browser build.
