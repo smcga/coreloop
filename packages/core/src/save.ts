@@ -51,6 +51,10 @@ function isRunState(value: unknown): boolean {
     typeof value.phase !== "string" ||
     typeof value.currency !== "number" ||
     typeof value.encounterNumber !== "number" ||
+    typeof value.gameplayModuleId !== "string" ||
+    !(
+      value.gameplaySession === null || isGameplaySession(value.gameplaySession)
+    ) ||
     !isRecord(value.rng) ||
     value.rng.algorithm !== "mulberry32" ||
     typeof value.rng.value !== "number" ||
@@ -63,5 +67,14 @@ function isRunState(value: unknown): boolean {
     Array.isArray(inventory.consumables) &&
     typeof inventory.modifierCapacity === "number" &&
     typeof inventory.consumableCapacity === "number"
+  );
+}
+function isGameplaySession(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.moduleId === "string" &&
+    Number.isSafeInteger(value.moduleVersion) &&
+    typeof value.encounterId === "string" &&
+    "data" in value
   );
 }

@@ -24,6 +24,12 @@ import {
   type Rect,
 } from "../ui/Layout";
 import { ui } from "../ui/UiTokens";
+import {
+  COMBINATION_GRID_ID,
+  TIMING_METER_ID,
+  timingMeterModule,
+  type TimingMeterState,
+} from "../../gameplay/modules";
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = createInitialRunState();
@@ -33,21 +39,54 @@ export class LabScene extends Phaser.Scene {
   private log: string[] = [];
   private inputLocked = false;
   private readonly saves = new RunSaveStore(localStorage);
+  private timing: TimingMeterState | null = null;
+  private markerPosition = 0;
+  private markerDirection = 1;
+  private lastFrame = 0;
 
   constructor() {
     super("lab");
   }
 
-  create(data: { run?: RunState }): void {
+  create(data: { run?: RunState; moduleId?: string }): void {
     if (data.run) {
       this.run = data.run;
       this.feedback = "Saved run resumed";
       this.inputLocked = this.run.phase !== "encounter-active";
-    } else this.startNewRun();
+      if (
+        this.run.gameplayModuleId === TIMING_METER_ID &&
+        this.run.gameplaySession
+      )
+        this.timing = timingMeterModule.validateState(
+          this.run.gameplaySession.data,
+        );
+    } else this.startNewRun(data.moduleId ?? COMBINATION_GRID_ID);
     this.scale.on("resize", this.render, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
       this.scale.off("resize", this.render, this),
     );
+  }
+
+  update(_time: number, delta: number): void {
+    if (
+      this.run.gameplayModuleId !== TIMING_METER_ID ||
+      this.inputLocked ||
+      !this.timing
+    )
+      return;
+    this.lastFrame += delta;
+    const steps = Math.floor(this.lastFrame / 16);
+    if (!steps) return;
+    this.lastFrame -= steps * 16;
+    this.markerPosition +=
+      this.markerDirection * this.timing.speedTicks * steps;
+    while (this.markerPosition > 1000 || this.markerPosition < 0) {
+      if (this.markerPosition > 1000)
+        this.markerPosition = 2000 - this.markerPosition;
+      else this.markerPosition = -this.markerPosition;
+      this.markerDirection *= -1;
+    }
+    this.render();
   }
 
   private dispatch(command: RunCommand): readonly RunEvent[] {
@@ -67,12 +106,13 @@ export class LabScene extends Phaser.Scene {
     return result.events;
   }
 
-  private startNewRun(): void {
+  private startNewRun(moduleId = this.run.gameplayModuleId): void {
     const seed = Date.now() >>> 0;
     this.run = createInitialRunState();
     this.log = [];
-    this.dispatch({ type: "start-run", seed });
+    this.dispatch({ type: "start-run", seed, gameplayModuleId: moduleId });
     this.dispatch({ type: "start-encounter" });
+    if (moduleId === TIMING_METER_ID) this.initialiseTiming();
     this.selection = initialSelection();
     this.feedback = "Select up to five tiles, then submit";
     this.inputLocked = false;
@@ -83,6 +123,8 @@ export class LabScene extends Phaser.Scene {
   private render(): void {
     this.children.removeAll();
     if (this.run.phase === "shop") return this.renderShop();
+    if (this.run.gameplayModuleId === TIMING_METER_ID)
+      return this.renderTiming();
     const brief = this.run.currentEncounter;
     if (brief === null) return;
     const { width, height } = this.scale;
@@ -298,6 +340,204 @@ export class LabScene extends Phaser.Scene {
       );
   }
 
+  private initialiseTiming(): void {
+    const brief = this.run.currentEncounter!;
+    const specialRuleId =
+      brief.number === 3
+        ? "timing:faster-marker"
+        : brief.number === 6
+          ? "timing:narrow-zones"
+          : null;
+    const created = timingMeterModule.createEncounter({
+      encounterId: brief.id,
+      encounterNumber: brief.number,
+      target: brief.target,
+      specialRuleId,
+      rng: this.run.rng,
+    });
+    this.timing = created.state;
+    this.markerPosition = created.state.initialDirection === 1 ? 0 : 1000;
+    this.markerDirection = created.state.initialDirection;
+    this.storeTiming();
+  }
+
+  private storeTiming(): void {
+    if (!this.timing || !this.run.currentEncounter) return;
+    this.dispatch({
+      type: "store-gameplay-session",
+      session: {
+        moduleId: TIMING_METER_ID,
+        moduleVersion: timingMeterModule.version,
+        encounterId: this.run.currentEncounter.id,
+        data: this.timing as unknown as import("@core-loop/core").JsonValue,
+      },
+    });
+  }
+
+  private stopTiming(): void {
+    if (!this.timing || this.inputLocked) return;
+    const result = timingMeterModule.handleAction(
+      this.timing,
+      { type: "stop", position: Math.round(this.markerPosition) },
+      {
+        encounterId: this.run.currentEncounter!.id,
+        encounterNumber: this.run.encounterNumber,
+      },
+    );
+    if (!result.accepted) return;
+    this.timing = result.state;
+    this.feedback = `${result.state.attempts.at(-1)!.grade.toUpperCase()} · +${result.state.attempts.at(-1)!.score}`;
+    this.storeTiming();
+    if (timingMeterModule.isComplete(this.timing)) {
+      this.inputLocked = true;
+      const report = timingMeterModule.createReport(this.timing, {
+        encounterId: this.run.currentEncounter!.id,
+        encounterNumber: this.run.encounterNumber,
+      });
+      this.dispatch({ type: "submit-encounter", report });
+    } else {
+      this.markerPosition = this.timing.initialDirection === 1 ? 0 : 1000;
+      this.markerDirection = this.timing.initialDirection;
+    }
+    this.render();
+  }
+
+  private renderTiming(): void {
+    const brief = this.run.currentEncounter;
+    if (!brief || !this.timing) return;
+    const { width, height } = this.scale;
+    const resolved = this.run.phase !== "encounter-active";
+    const layout = computeEncounterLayout(width, height, {
+      tileCount: 4,
+      debugOpen: this.debug,
+      resolved,
+    });
+    this.textButton(
+      layout.header.x,
+      layout.header.y,
+      "‹ Menu",
+      () => this.scene.start("menu"),
+      false,
+      88,
+    );
+    this.add
+      .text(width / 2, layout.header.y + 3, "TIMING METER", {
+        fontFamily: ui.font,
+        fontSize: "22px",
+        fontStyle: "bold",
+        color: palette.text,
+      })
+      .setOrigin(0.5, 0);
+    this.textButton(
+      layout.header.x + layout.header.width - 82,
+      layout.header.y,
+      this.debug ? "Close" : "Debug",
+      () => {
+        this.debug = !this.debug;
+        this.render();
+      },
+      false,
+      82,
+    );
+    const progress = timingMeterModule.getProgress(this.timing);
+    this.add
+      .text(
+        width / 2,
+        layout.hud.y + 4,
+        `RUN ${brief.number}/6  •  TARGET ${brief.target}  •  SCORE ${progress.score}  •  ¤${this.run.currency}`,
+        {
+          fontFamily: ui.font,
+          fontSize: "15px",
+          fontStyle: "bold",
+          color: "#38bdf8",
+          align: "center",
+          wordWrap: { width: layout.hud.width },
+        },
+      )
+      .setOrigin(0.5, 0);
+    this.add
+      .text(
+        width / 2,
+        layout.hud.y + 30,
+        `Attempt ${Math.min(progress.completedActions + 1, progress.totalActions)}/${progress.totalActions}  •  Streak ${this.timing.currentStreak}${brief.number === 3 || brief.number === 6 ? `  •  ⚠ ${brief.number === 3 ? "Faster marker" : "Narrow perfect zone"}` : ""}`,
+        { fontFamily: ui.font, fontSize: "13px", color: palette.text },
+      )
+      .setOrigin(0.5, 0);
+    const meterX = layout.board.x + Math.max(10, layout.board.width * 0.05),
+      meterWidth = Math.min(760, layout.board.width * 0.9);
+    const meterY = layout.board.y + layout.board.height / 2;
+    this.add
+      .rectangle(meterX + meterWidth / 2, meterY, meterWidth, 72, palette.panel)
+      .setStrokeStyle(3, 0xffffff);
+    const zone = (from: number, to: number, colour: number) =>
+      this.add.rectangle(
+        meterX + (((from + to) / 2) * meterWidth) / 1000,
+        meterY,
+        ((to - from) * meterWidth) / 1000,
+        66,
+        colour,
+      );
+    zone(200, 800, 0x334155);
+    zone(340, 660, 0x0e7490);
+    zone(
+      500 - this.timing.perfectWidth / 2,
+      500 + this.timing.perfectWidth / 2,
+      0x22c55e,
+    );
+    this.add.rectangle(
+      meterX + (this.markerPosition * meterWidth) / 1000,
+      meterY,
+      8,
+      88,
+      0xffffff,
+    );
+    this.add
+      .text(width / 2, meterY + 58, this.feedback, {
+        fontFamily: ui.font,
+        fontSize: "17px",
+        fontStyle: "bold",
+        color: palette.text,
+      })
+      .setOrigin(0.5);
+    if (!resolved)
+      this.control(
+        width / 2,
+        layout.actions.y + layout.actions.height / 2,
+        "STOP",
+        () => this.stopTiming(),
+      );
+    else if (this.run.phase === "reward")
+      this.control(
+        width / 2,
+        layout.actions.y + layout.actions.height / 2,
+        "Enter shop",
+        () => {
+          this.dispatch({ type: "enter-shop" });
+          this.render();
+        },
+      );
+    else
+      this.control(
+        width / 2,
+        layout.actions.y + layout.actions.height / 2,
+        "Start new run",
+        () => this.scene.start("menu"),
+      );
+    if (resolved && this.run.scoreLedger.length)
+      this.panelText(
+        layout.details ?? layout.feedback,
+        [
+          "SCORE BREAKDOWN",
+          ...this.timing.attempts.map(
+            (a, i) => `Attempt ${i + 1} — ${a.grade} +${a.score}`,
+          ),
+          ...this.run.scoreLedger.slice(1).map((e) => `${e.label}: ${e.after}`),
+        ].join("  •  "),
+        "#fde68a",
+        "11px",
+      );
+  }
+
   private panelText(
     rect: Rect,
     value: string,
@@ -358,6 +598,7 @@ export class LabScene extends Phaser.Scene {
     if (this.inputLocked === false) return;
     this.dispatch({ type: "advance" });
     this.dispatch({ type: "start-encounter" });
+    if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
     this.selection = initialSelection();
     this.inputLocked = false;
     this.feedback = "New encounter ready — make your selection";
@@ -557,6 +798,7 @@ export class LabScene extends Phaser.Scene {
       this.feedback = `Used ${definitionFor(consumable.definitionId)?.name}`;
     }
     this.dispatch({ type: "start-encounter" });
+    if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
     this.selection = initialSelection();
     this.inputLocked = false;
     this.render();

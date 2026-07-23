@@ -4,6 +4,7 @@ import { RunSaveStore } from "../../persistence";
 import { terminology, toggleTerminology } from "../../terminology";
 import { computeMenuLayout, type Rect } from "../ui/Layout";
 import { ui } from "../ui/UiTokens";
+import { COMBINATION_GRID_ID, TIMING_METER_ID } from "../../gameplay/modules";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -32,8 +33,13 @@ export class MenuScene extends Phaser.Scene {
           ]
         : []),
       {
-        label: `New ${terms.run.singular.toLowerCase()}`,
-        action: () => this.scene.start("lab", { fresh: true }),
+        label: `New · Combination Grid\nNumber patterns and selections`,
+        action: () =>
+          this.scene.start("lab", { moduleId: COMBINATION_GRID_ID }),
+      },
+      {
+        label: `New · Timing Meter\nStop the marker near centre`,
+        action: () => this.scene.start("lab", { moduleId: TIMING_METER_ID }),
       },
       ...(saved
         ? [

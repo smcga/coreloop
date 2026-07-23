@@ -55,9 +55,11 @@ The Phaser host owns:
 ```text
 apps/threshold-lab
         ↓
-packages/phaser       gameplay module
+packages/phaser       Combination Grid | Timing Meter
         ↓                    ↓
-packages/content ─────→ packages/core
+packages/content ───→ gameplay-module contract
+                             ↓
+                        packages/core
         ↑
 packages/testing (test-only helpers)
 ```
@@ -131,6 +133,8 @@ Visual-only variation may use a separate non-authoritative source, provided it c
 The run engine uses an explicitly implemented **Mulberry32** generator. Its unsigned 32-bit state is stored on `RunState`, every generated tile value and tag advances that state, and fixed test vectors protect replay compatibility. Mulberry32 is suitable here for fast deterministic game logic, not cryptography.
 
 ## Gameplay-module contract
+
+The formal contract, registry, capability model, state envelope, deterministic Timing Meter representation, and third-module example are documented in [`gameplay-modules.md`](gameplay-modules.md).
 
 The exact API will evolve through the playable test-bed, but a module will eventually need to provide equivalents of:
 
