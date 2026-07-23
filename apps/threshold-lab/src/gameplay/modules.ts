@@ -8,6 +8,12 @@ import {
 export const COMBINATION_GRID_ID = "threshold-lab:combination-grid";
 export const TIMING_METER_ID = "threshold-lab:timing-meter";
 
+export function gameplayInstruction(moduleId: string): string {
+  return moduleId === TIMING_METER_ID
+    ? "Tap STOP when the marker reaches the bright centre"
+    : "Select up to five objects, then submit";
+}
+
 export interface GridObject {
   readonly id: string;
   readonly value: number;

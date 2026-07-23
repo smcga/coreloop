@@ -26,6 +26,7 @@ import {
 import { ui } from "../ui/UiTokens";
 import {
   COMBINATION_GRID_ID,
+  gameplayInstruction,
   TIMING_METER_ID,
   timingMeterModule,
   type TimingMeterState,
@@ -43,6 +44,9 @@ export class LabScene extends Phaser.Scene {
   private markerPosition = 0;
   private markerDirection = 1;
   private lastFrame = 0;
+  private marker: Phaser.GameObjects.Rectangle | null = null;
+  private markerMeterX = 0;
+  private markerMeterWidth = 0;
 
   constructor() {
     super("lab");
@@ -60,6 +64,10 @@ export class LabScene extends Phaser.Scene {
         this.timing = timingMeterModule.validateState(
           this.run.gameplaySession.data,
         );
+      if (this.timing) {
+        this.markerPosition = this.timing.initialDirection === 1 ? 0 : 1000;
+        this.markerDirection = this.timing.initialDirection;
+      }
     } else this.startNewRun(data.moduleId ?? COMBINATION_GRID_ID);
     this.scale.on("resize", this.render, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
@@ -86,6 +94,11 @@ export class LabScene extends Phaser.Scene {
       else this.markerPosition = -this.markerPosition;
       this.markerDirection *= -1;
     }
+    if (this.marker?.active)
+      this.marker.setX(
+        this.markerMeterX +
+          (this.markerPosition * this.markerMeterWidth) / 1000,
+      );
     this.render();
   }
 
@@ -114,7 +127,7 @@ export class LabScene extends Phaser.Scene {
     this.dispatch({ type: "start-encounter" });
     if (moduleId === TIMING_METER_ID) this.initialiseTiming();
     this.selection = initialSelection();
-    this.feedback = "Select up to five tiles, then submit";
+    this.feedback = gameplayInstruction(moduleId);
     this.inputLocked = false;
     this.saves.save(this.run);
     this.render();
@@ -358,6 +371,7 @@ export class LabScene extends Phaser.Scene {
     this.timing = created.state;
     this.markerPosition = created.state.initialDirection === 1 ? 0 : 1000;
     this.markerDirection = created.state.initialDirection;
+    this.feedback = gameplayInstruction(TIMING_METER_ID);
     this.storeTiming();
   }
 
@@ -484,7 +498,9 @@ export class LabScene extends Phaser.Scene {
       500 + this.timing.perfectWidth / 2,
       0x22c55e,
     );
-    this.add.rectangle(
+    this.markerMeterX = meterX;
+    this.markerMeterWidth = meterWidth;
+    this.marker = this.add.rectangle(
       meterX + (this.markerPosition * meterWidth) / 1000,
       meterY,
       8,

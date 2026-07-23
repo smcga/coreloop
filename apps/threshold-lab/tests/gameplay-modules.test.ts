@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { runGameplayModuleScenario } from "@core-loop/testing";
 import {
   combinationGridModule,
+  gameplayInstruction,
   timingMeterModule,
   classifyTimingPosition,
   type TimingMeterState,
@@ -66,6 +67,12 @@ describe("gameplay module registry", () => {
 });
 
 describe("Timing Meter", () => {
+  it("provides mode-specific instructions instead of grid instructions", () => {
+    expect(gameplayInstruction(timingMeterModule.id)).toBe(
+      "Tap STOP when the marker reaches the bright centre",
+    );
+    expect(gameplayInstruction(combinationGridModule.id)).toContain("Select");
+  });
   it("generates deterministic serialisable configurations", () => {
     expect(timingMeterModule.createEncounter(context)).toEqual(
       timingMeterModule.createEncounter(context),
@@ -116,6 +123,20 @@ describe("Timing Meter", () => {
       bestStreak: 2,
     });
     expect(report.score).toBe(84);
+  });
+
+  it("accepts every committed tap until the configured attempt count", () => {
+    let state = timingMeterModule.createEncounter(context).state;
+    for (let index = 0; index < state.attemptCount; index++) {
+      const result = timingMeterModule.handleAction(
+        state,
+        { type: "stop", position: 500 },
+        context,
+      );
+      expect(result.accepted, `tap ${index + 1}`).toBe(true);
+      expect(result.state.attempts).toHaveLength(index + 1);
+      state = result.state;
+    }
   });
 
   it("replays explicit actions into the identical report", () => {
