@@ -41,15 +41,19 @@ Connect the phone and development computer to the same trusted network, then run
 npm run dev -- --host
 ```
 
-Open Vite's displayed network URL on the phone. Verify the menu and experiment in portrait and landscape, including selection, the five-tile limit, submit, reset, and the menu route. No interaction requires hover, and the page prevents scrolling during play.
+Open Vite's displayed network URL on the phone. Play a complete seeded six-encounter run in portrait and landscape, including selection, scoring bonuses, submit, advancement, and starting over after a result. No interaction requires hover, and the page prevents scrolling during play.
 
 ## Workspace
 
-- `packages/core` — browser-independent framework boundary (the run engine starts in Issue #2).
+- `packages/core` — browser-independent deterministic command/event run engine.
 - `packages/content` — future content-loading boundary.
 - `packages/phaser` — shared Phaser-facing integration helpers.
 - `packages/testing` — future reusable scenario-test helpers.
-- `apps/threshold-lab` — the playable Phaser test-bed and temporary Issue #1 selection state.
+- `apps/threshold-lab` — the playable Phaser test-bed and encounter-specific tile scoring.
+
+## Seeded runs and diagnostics
+
+Starting an experiment creates and displays a numeric run seed. The engine uses that seed for the entire encounter schedule; the same seed and command sequence reproduce the same generated tiles. Threshold Lab's small **Debug** button shows recent commands, ordered events, reports, and phase transitions without replacing the player-facing result display.
 
 ## Project status
 
