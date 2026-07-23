@@ -31,6 +31,7 @@ import {
   timingMeterModule,
   type TimingMeterState,
 } from "../../gameplay/modules";
+import { advanceTimingMarker } from "../timingPresentation";
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = createInitialRunState();
@@ -86,20 +87,19 @@ export class LabScene extends Phaser.Scene {
     const steps = Math.floor(this.lastFrame / 16);
     if (!steps) return;
     this.lastFrame -= steps * 16;
-    this.markerPosition +=
-      this.markerDirection * this.timing.speedTicks * steps;
-    while (this.markerPosition > 1000 || this.markerPosition < 0) {
-      if (this.markerPosition > 1000)
-        this.markerPosition = 2000 - this.markerPosition;
-      else this.markerPosition = -this.markerPosition;
-      this.markerDirection *= -1;
-    }
+    const motion = advanceTimingMarker(
+      this.markerPosition,
+      this.markerDirection,
+      this.timing.speedTicks,
+      steps,
+    );
+    this.markerPosition = motion.position;
+    this.markerDirection = motion.direction;
     if (this.marker?.active)
       this.marker.setX(
         this.markerMeterX +
           (this.markerPosition * this.markerMeterWidth) / 1000,
       );
-    this.render();
   }
 
   private dispatch(command: RunCommand): readonly RunEvent[] {
