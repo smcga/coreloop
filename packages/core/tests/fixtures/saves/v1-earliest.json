@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "frameworkVersion": "0.1.0",
+  "contentVersion": 3,
+  "savedAt": "2025-08-01T00:00:00.000Z",
+  "run": {
+    "phase": "idle",
+    "seed": null,
+    "rng": { "algorithm": "mulberry32", "value": 0 },
+    "encounterNumber": 0,
+    "currentEncounter": null,
+    "currency": 0,
+    "inventory": {
+      "modifiers": [],
+      "consumables": [],
+      "modifierCapacity": 4,
+      "consumableCapacity": 2
+    },
+    "shop": null,
+    "nextInstanceId": 1,
+    "nextOfferId": 1,
+    "lastReport": null,
+    "scoreBreakdown": [],
+    "scoreLedger": [],
+    "gameplayModuleId": "threshold-lab:combination-grid",
+    "gameplaySession": null
+  }
+}

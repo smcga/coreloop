@@ -1,5 +1,9 @@
 # Core Loop roadmap
 
+## Current status
+
+1.0A hardening adds explicit extension registries, save format 4 migrations, compatibility diagnostics, canonical hashes, and replay format 1. Issue #8 simulation remains out of scope.
+
 Core Loop is developed in three releases. Each release contains three large delivery issues and must end with a noticeably stronger playable build.
 
 ## 0.1 — Playable Spine

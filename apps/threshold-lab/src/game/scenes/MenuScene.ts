@@ -33,6 +33,73 @@ export class MenuScene extends Phaser.Scene {
           ]
         : []),
       {
+        label: "Import save JSON",
+        action: () => {
+          const text = window.prompt("Paste a Core Loop save JSON envelope");
+          if (!text) return;
+          try {
+            const result = store.importText(text);
+            window.alert(
+              result.migratedFrom === null
+                ? "Current save imported"
+                : `Save v${result.migratedFrom} migrated and imported`,
+            );
+            this.render();
+          } catch (error) {
+            window.alert(
+              `Save import failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        },
+      },
+      ...(saved
+        ? [
+            {
+              label: "Copy save JSON",
+              action: () => {
+                const text = store.exportText();
+                if (text)
+                  void navigator.clipboard.writeText(text).then(
+                    () => window.alert("Save JSON copied"),
+                    () => window.prompt("Copy save JSON", text),
+                  );
+              },
+            },
+          ]
+        : []),
+      {
+        label: "Import replay JSON",
+        action: () => {
+          const text = window.prompt("Paste a Core Loop replay JSON envelope");
+          if (!text) return;
+          try {
+            const replay = store.importReplayText(text);
+            window.alert(
+              `Replay validated: ${replay.inputs.length} inputs. Use automated Verify Replay for deterministic execution.`,
+            );
+          } catch (error) {
+            window.alert(
+              `Replay import failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        },
+      },
+      ...(store.loadReplay()
+        ? [
+            {
+              label: "Copy replay JSON",
+              action: () => {
+                const text = store.exportReplayText();
+                if (text)
+                  void navigator.clipboard.writeText(text).then(
+                    () => window.alert("Replay JSON copied"),
+                    () => window.prompt("Copy replay JSON", text),
+                  );
+              },
+            },
+          ]
+        : []),
+      {
         label: `New · Combination Grid\nNumber patterns and selections`,
         action: () =>
           this.scene.start("lab", { moduleId: COMBINATION_GRID_ID }),

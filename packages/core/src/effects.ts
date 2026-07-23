@@ -1,4 +1,6 @@
 import { nextUint32, type RandomState } from "./random";
+import { canonicalJson } from "./canonical";
+import { FrameworkError } from "./errors";
 
 export type NumericComparator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
 export type NumericValue =
@@ -265,19 +267,68 @@ export type CustomEffectHandler = (
   context: CustomEffectContext,
 ) => CustomEffectResult;
 export class EffectHandlerRegistry {
-  private readonly handlers = new Map<string, CustomEffectHandler>();
-  register(id: string, handler: CustomEffectHandler): void {
-    if (!id.includes(":"))
-      throw new Error("Custom handler IDs must be namespaced");
+  private readonly handlers = new Map<
+    string,
+    {
+      readonly version: number;
+      readonly handler: CustomEffectHandler;
+      readonly builtIn: boolean;
+    }
+  >();
+  register(
+    id: string,
+    handler: CustomEffectHandler,
+    version = 1,
+    options: {
+      readonly builtIn?: boolean;
+      readonly allowBuiltInReplacement?: boolean;
+    } = {},
+  ): void {
+    if (!/^[a-z0-9-]+:[a-z0-9-]+$/.test(id))
+      throw new FrameworkError(
+        "unknown-custom-handler",
+        "Custom handler IDs must be namespaced",
+        { actual: id },
+      );
+    if (!Number.isSafeInteger(version) || version < 1)
+      throw new FrameworkError(
+        "unknown-custom-handler",
+        `Custom handler '${id}' has an invalid version`,
+        { actual: version },
+      );
     if (this.handlers.has(id))
-      throw new Error(`Duplicate custom handler: ${id}`);
-    this.handlers.set(id, handler);
+      throw new FrameworkError(
+        "duplicate-id",
+        `Duplicate custom handler: ${id}`,
+        { definitionId: id },
+      );
+    if (
+      id.startsWith("core:") &&
+      !options.builtIn &&
+      !options.allowBuiltInReplacement
+    )
+      throw new FrameworkError(
+        "unknown-custom-handler",
+        `Built-in handler namespace cannot be replaced: ${id}`,
+        { definitionId: id },
+      );
+    this.handlers.set(id, {
+      handler,
+      version,
+      builtIn: options.builtIn ?? false,
+    });
   }
   get(id: string): CustomEffectHandler | undefined {
-    return this.handlers.get(id);
+    return this.handlers.get(id)?.handler;
   }
   has(id: string): boolean {
     return this.handlers.has(id);
+  }
+  references(): readonly { readonly id: string; readonly version: number }[] {
+    return [...this.handlers].map(([id, value]) => ({
+      id,
+      version: value.version,
+    }));
   }
 }
 
@@ -742,12 +793,16 @@ export function resolveEffects(
               source: execution.source,
             });
           else {
+            // A handler only receives a private serialisable snapshot. Its result is
+            // committed after successful canonical validation, so exceptions cannot
+            // leak partially-mutated runtime state.
             const result = handler({
-              state,
+              state: structuredClone(state),
               signal,
               source: execution.source,
               operation,
             });
+            canonicalJson(result);
             state = result.state ?? state;
             events.push(...(result.events ?? []));
           }

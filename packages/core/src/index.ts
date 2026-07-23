@@ -3,3 +3,7 @@ export * from "./effects";
 export * from "./random";
 export * from "./save";
 export * from "./gameplay";
+export * from "./errors";
+export * from "./canonical";
+export * from "./policies";
+export * from "./replay";
