@@ -81,6 +81,7 @@ The headless framework packages must not depend on Phaser, the DOM or browser st
 - [`docs/architecture.md`](docs/architecture.md) — boundaries and core design
 - [`docs/threshold-lab.md`](docs/threshold-lab.md) — playable test-bed specification
 - [`docs/development.md`](docs/development.md) — expected development and verification workflow
+- [`docs/effects.md`](docs/effects.md) — deterministic triggers, operations, chaining, and score ledger
 - [`docs/issue-1-brief.md`](docs/issue-1-brief.md) — concrete implementation brief for the first issue
 - [`docs/roadmap.md`](docs/roadmap.md) — release progression
 

@@ -170,3 +170,7 @@ No external art assets are required for the first release. Generated shapes and 
 Phase 2 introduces Timing Lab, where a moving marker is stopped by tapping. This module must use the same surrounding run systems while emitting different gameplay signals.
 
 Threshold Lab should therefore avoid leaking concepts such as tile coordinates, grid matches or selected numbers into `packages/core`.
+
+## Issue #4 playable slice
+
+Threshold Lab now shows an ordered structured score ledger with gameplay, additive, multiplicative, retrigger, boss-rule, and final contributions. The display reads core ledger entries and does not recalculate modifier outcomes.

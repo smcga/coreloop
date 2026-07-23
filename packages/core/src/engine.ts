@@ -1,7 +1,13 @@
 import { createRandom, randomInteger, type RandomState } from "./random";
+import {
+  resolveEffects,
+  type EffectDefinition,
+  type EffectTrigger,
+  type ScoreLedgerEntry,
+} from "./effects";
 
 export const ENCOUNTER_COUNT = 6;
-export const CONTENT_VERSION = 1;
+export const CONTENT_VERSION = 2;
 export type Rarity = "common" | "uncommon" | "rare";
 export type ItemCategory = "modifier" | "consumable";
 export type EffectType =
@@ -25,6 +31,7 @@ export interface ItemDefinition {
   readonly basePrice: number;
   readonly effectType: EffectType;
   readonly parameters: Readonly<Record<string, number | string>>;
+  readonly triggers?: readonly EffectTrigger[];
 }
 
 export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
@@ -38,6 +45,20 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 10,
     effectType: "tagged-bonus",
     parameters: { tag: "cyan", amount: 10 },
+    triggers: [
+      {
+        id: "cyan-score",
+        event: "score",
+        stage: "additive",
+        operations: [
+          {
+            type: "add-score",
+            amount: { from: "metric", key: "cyan" },
+            factor: 10,
+          },
+        ],
+      },
+    ],
   },
   {
     id: "pair-amplifier",
@@ -49,6 +70,15 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 12,
     effectType: "pair-amplifier",
     parameters: { multiplier: 1.5 },
+    triggers: [
+      {
+        id: "amplify-pair",
+        event: "score",
+        stage: "multiplicative",
+        conditions: { type: "signal-tag", tag: "pair" },
+        operations: [{ type: "multiply-score", numerator: 3, denominator: 2 }],
+      },
+    ],
   },
   {
     id: "perfect-reward",
@@ -60,6 +90,22 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 14,
     effectType: "perfect-reward",
     parameters: { margin: 20, currency: 5 },
+    triggers: [
+      {
+        id: "perfect-currency",
+        event: "result",
+        stage: "post-result",
+        conditions: {
+          type: "compare",
+          left: { from: "signal", key: "margin" },
+          comparator: "gte",
+          right: { from: "constant", value: 20 },
+        },
+        operations: [
+          { type: "currency", amount: { from: "constant", value: 5 } },
+        ],
+      },
+    ],
   },
   {
     id: "sequence-learner",
@@ -71,6 +117,30 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 15,
     effectType: "sequence-learner",
     parameters: { growth: 3 },
+    triggers: [
+      {
+        id: "learned-score",
+        event: "score",
+        stage: "additive",
+        operations: [
+          { type: "add-score", amount: { from: "stored", key: "bonus" } },
+        ],
+      },
+      {
+        id: "learn-sequence",
+        event: "score",
+        stage: "post-result",
+        conditions: { type: "signal-tag", tag: "sequence" },
+        operations: [
+          {
+            type: "stored-value",
+            key: "bonus",
+            amount: { from: "constant", value: 3 },
+            default: 0,
+          },
+        ],
+      },
+    ],
   },
   {
     id: "first-echo",
@@ -82,6 +152,16 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 17,
     effectType: "first-echo",
     parameters: {},
+    triggers: [
+      {
+        id: "echo-first",
+        event: "score",
+        stage: "additive",
+        operations: [
+          { type: "add-score", amount: { from: "metric", key: "firstValue" } },
+        ],
+      },
+    ],
   },
   {
     id: "high-risk",
@@ -93,6 +173,14 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     basePrice: 18,
     effectType: "high-risk",
     parameters: { multiplier: 2 },
+    triggers: [
+      {
+        id: "double-score",
+        event: "score",
+        stage: "multiplicative",
+        operations: [{ type: "multiply-score", numerator: 2, denominator: 1 }],
+      },
+    ],
   },
   {
     id: "tile-refresh",
@@ -169,7 +257,7 @@ export interface EncounterBrief {
 }
 export interface GameplaySignal {
   readonly type: string;
-  readonly sourceId?: string;
+  readonly sourceId?: string | undefined;
   readonly tags: readonly string[];
   readonly values: Readonly<Record<string, number>>;
 }
@@ -184,7 +272,7 @@ export interface ScoreLine {
   readonly label: string;
   readonly operation: "add" | "multiply" | "subtract" | "final";
   readonly value: number;
-  readonly sourceId?: string;
+  readonly sourceId?: string | undefined;
 }
 export type RunPhase =
   | "idle"
@@ -208,6 +296,7 @@ export interface RunState {
   readonly nextOfferId: number;
   readonly lastReport: EncounterReport | null;
   readonly scoreBreakdown: readonly ScoreLine[];
+  readonly scoreLedger: readonly ScoreLedgerEntry[];
 }
 export type RunCommand =
   | { readonly type: "start-run"; readonly seed: number }
@@ -308,6 +397,7 @@ export function createInitialRunState(): RunState {
     nextOfferId: 1,
     lastReport: null,
     scoreBreakdown: [],
+    scoreLedger: [],
   };
 }
 export function targetForEncounter(number: number): number {
@@ -423,98 +513,234 @@ function resolveScore(
   report: EncounterReport,
 ): {
   score: number;
+  target: number;
+  currency: number;
+  rng: RandomState;
   inventory: Inventory;
   events: RunEvent[];
   lines: ScoreLine[];
+  ledger: ScoreLedgerEntry[];
 } {
-  let score = report.score;
-  const lines: ScoreLine[] = [
-    { label: "Gameplay score", operation: "add", value: score },
-  ];
-  const events: RunEvent[] = [];
-  let modifiers = [...state.inventory.modifiers];
-  for (const owned of modifiers) {
-    const def = definitionFor(owned.definitionId);
-    if (!def || owned.disabled) continue;
-    let add = 0;
-    if (def.effectType === "tagged-bonus")
-      add =
-        (report.metrics[String(def.parameters.tag)] ?? 0) *
-        Number(def.parameters.amount);
-    if (def.effectType === "first-echo") add = report.metrics.firstValue ?? 0;
-    if (def.effectType === "sequence-learner") {
-      add = owned.storedValues.bonus ?? 0;
-      if (report.tags.includes("sequence")) {
-        const value = add + Number(def.parameters.growth);
-        modifiers = modifiers.map((x) =>
-          x.instanceId === owned.instanceId
-            ? { ...x, storedValues: { ...x.storedValues, bonus: value } }
-            : x,
-        );
-        events.push({
-          type: "stored-value-increased",
-          instanceId: owned.instanceId,
-          value,
-        });
-      }
-    }
-    if (add) {
-      score += add;
-      lines.push({
-        label: def.name,
-        operation: "add",
-        value: add,
-        sourceId: owned.instanceId,
-      });
-      events.push({
-        type: "modifier-triggered",
-        instanceId: owned.instanceId,
-        label: def.name,
-      });
-    }
-  }
-  for (const owned of modifiers) {
-    const def = definitionFor(owned.definitionId);
-    if (!def || owned.disabled) continue;
-    let multiplier = 1;
-    if (def.effectType === "pair-amplifier" && report.tags.includes("pair"))
-      multiplier = Number(def.parameters.multiplier);
-    if (def.effectType === "high-risk")
-      multiplier = Number(def.parameters.multiplier);
-    if (multiplier !== 1) {
-      score = Math.floor(score * multiplier);
-      lines.push({
-        label: def.name,
-        operation: "multiply",
-        value: multiplier,
-        sourceId: owned.instanceId,
-      });
-      events.push({
-        type: "modifier-triggered",
-        instanceId: owned.instanceId,
-        label: def.name,
-      });
-    }
-  }
+  const definitions: EffectDefinition[] = ITEM_DEFINITIONS.filter(
+    (definition) => definition.triggers,
+  ).map((definition) => ({
+    id: definition.id,
+    label: definition.name,
+    tags: [definition.category, definition.rarity],
+    triggers: definition.triggers!,
+  }));
+  const instances = state.inventory.modifiers.map((owned) => ({ ...owned }));
   if (state.currentEncounter?.temporaryScoreBonus) {
-    score += state.currentEncounter.temporaryScoreBonus;
-    lines.push({
+    definitions.push({
+      id: "encounter:score-pulse",
       label: "Score Pulse",
-      operation: "add",
-      value: state.currentEncounter.temporaryScoreBonus,
+      tags: ["consumable"],
+      triggers: [
+        {
+          id: "temporary-score",
+          event: "score",
+          stage: "additive",
+          operations: [
+            {
+              type: "add-score",
+              amount: {
+                from: "constant",
+                value: state.currentEncounter.temporaryScoreBonus,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    instances.push({
+      instanceId: "temporary-score-pulse",
+      definitionId: "encounter:score-pulse",
+      storedValues: {},
+      disabled: false,
     });
   }
   if (state.currentEncounter?.specialRule === "cyan-penalty") {
-    const penalty = (report.metrics.cyan ?? 0) * 5;
-    score -= penalty;
-    lines.push({
+    definitions.push({
+      id: "encounter:cyan-penalty",
       label: "Boss: cyan penalty",
-      operation: "subtract",
-      value: penalty,
+      tags: ["encounter-rule"],
+      triggers: [
+        {
+          id: "cyan-penalty",
+          event: "score",
+          stage: "encounter-rule",
+          operations: [
+            {
+              type: "add-score",
+              amount: { from: "metric", key: "cyan" },
+              factor: -5,
+            },
+          ],
+        },
+      ],
+    });
+    instances.push({
+      instanceId: "encounter-rule",
+      definitionId: "encounter:cyan-penalty",
+      storedValues: {},
+      disabled: false,
     });
   }
-  lines.push({ label: "Final score", operation: "final", value: score });
-  return { score, inventory: { ...state.inventory, modifiers }, events, lines };
+  const signal = {
+    id: `score-${state.encounterNumber}`,
+    sequence: 1,
+    type: "score",
+    tags: report.tags,
+    values: report.metrics,
+    context: {
+      encounterId: report.encounterId,
+      actionId: `action-${state.encounterNumber}`,
+      encounterNumber: state.encounterNumber,
+      special: state.currentEncounter?.specialRule !== null,
+      occurrence: {
+        chain: 1,
+        action: 1,
+        encounter: 1,
+        run: state.encounterNumber,
+      },
+    },
+  } as const;
+  const resolved = resolveEffects(
+    {
+      score: report.score,
+      target: state.currentEncounter!.target,
+      currency: state.currency,
+      priceModifier: 0,
+      rng: state.rng,
+      instances,
+      encounterTags: [],
+      allowances: { action: state.currentEncounter!.selectionLimit },
+      nextInstanceId: state.nextInstanceId,
+    },
+    signal,
+    definitions,
+  );
+  const modifiers = state.inventory.modifiers.map((owned) => {
+    const changed = resolved.state.instances.find(
+      (item) => item.instanceId === owned.instanceId,
+    );
+    return changed
+      ? {
+          ...owned,
+          storedValues: changed.storedValues,
+          disabled: changed.disabled,
+        }
+      : owned;
+  });
+  const events: RunEvent[] = [];
+  for (const entry of resolved.ledgerEntries) {
+    if (
+      entry.source.instanceId &&
+      !entry.source.instanceId.startsWith("encounter-") &&
+      !entry.source.instanceId.startsWith("temporary-")
+    )
+      events.push({
+        type: "modifier-triggered",
+        instanceId: entry.source.instanceId,
+        label: entry.label,
+      });
+  }
+  for (const event of resolved.events) {
+    if (event.type === "stored-value-changed" && event.source.instanceId)
+      events.push({
+        type: "stored-value-increased",
+        instanceId: event.source.instanceId,
+        value: event.value ?? 0,
+      });
+  }
+  const base: ScoreLedgerEntry = {
+    sequence: 1,
+    encounterId: report.encounterId,
+    actionId: signal.context.actionId,
+    source: { definitionId: "threshold-lab:gameplay" },
+    triggerId: "gameplay-score",
+    operation: "base",
+    label: "Gameplay score",
+    before: 0,
+    after: report.score,
+    amount: report.score,
+    stage: "gameplay",
+  };
+  const effectLedger = resolved.ledgerEntries.map((entry, index) => ({
+    ...entry,
+    sequence: index + 2,
+  }));
+  const final: ScoreLedgerEntry = {
+    sequence: effectLedger.length + 2,
+    encounterId: report.encounterId,
+    actionId: signal.context.actionId,
+    source: { definitionId: "core:encounter-result" },
+    triggerId: "final-score",
+    operation: "final",
+    label: "Final score",
+    before: resolved.state.score,
+    after: resolved.state.score,
+    stage: "post-result",
+  };
+  const target: ScoreLedgerEntry = {
+    sequence: final.sequence + 1,
+    encounterId: report.encounterId,
+    actionId: signal.context.actionId,
+    source: { definitionId: "core:encounter-target" },
+    triggerId: "final-target",
+    operation: "target",
+    label: "Target",
+    before: resolved.state.target,
+    after: resolved.state.target,
+    amount: 0,
+    stage: "post-result",
+  };
+  const outcome: ScoreLedgerEntry = {
+    sequence: target.sequence + 1,
+    encounterId: report.encounterId,
+    actionId: signal.context.actionId,
+    source: { definitionId: "core:encounter-result" },
+    triggerId: "outcome",
+    operation: "outcome",
+    label:
+      resolved.state.score >= resolved.state.target
+        ? "Encounter won"
+        : "Encounter lost",
+    before: resolved.state.score,
+    after: resolved.state.score,
+    stage: "post-result",
+  };
+  const ledger = [base, ...effectLedger, final, target, outcome];
+  const lines: ScoreLine[] = ledger
+    .filter(
+      (entry) => entry.operation !== "target" && entry.operation !== "outcome",
+    )
+    .map((entry) => ({
+      label: entry.label,
+      operation:
+        entry.operation === "multiply"
+          ? "multiply"
+          : entry.operation === "final"
+            ? "final"
+            : (entry.amount ?? 0) < 0
+              ? "subtract"
+              : "add",
+      value:
+        entry.operation === "multiply"
+          ? entry.multiplier!.numerator / entry.multiplier!.denominator
+          : Math.abs(entry.amount ?? entry.after),
+      sourceId: entry.source.instanceId,
+    }));
+  return {
+    score: resolved.state.score,
+    target: resolved.state.target,
+    currency: resolved.state.currency,
+    rng: resolved.state.rng,
+    inventory: { ...state.inventory, modifiers },
+    events,
+    lines,
+    ledger,
+  };
 }
 
 export function handle(
@@ -555,6 +781,7 @@ export function handle(
           phase: "encounter-active",
           lastReport: null,
           scoreBreakdown: [],
+          scoreLedger: [],
         },
         events: [
           ...(state.currentEncounter.specialRule
@@ -579,14 +806,16 @@ export function handle(
           "Report does not match the active encounter",
         );
       const resolved = resolveScore(state, command.report);
-      if (resolved.score < state.currentEncounter.target)
+      if (resolved.score < resolved.target)
         return {
           state: {
             ...state,
             phase: "run-failed",
             inventory: resolved.inventory,
+            rng: resolved.rng,
             lastReport: { ...command.report, score: resolved.score },
             scoreBreakdown: resolved.lines,
+            scoreLedger: resolved.ledger,
           },
           events: [
             ...resolved.events,
@@ -594,7 +823,7 @@ export function handle(
               type: "encounter-lost",
               encounterId: state.currentEncounter.id,
               score: resolved.score,
-              target: state.currentEncounter.target,
+              target: resolved.target,
             },
             { type: "run-failed", encounterNumber: state.encounterNumber },
           ],
@@ -615,16 +844,18 @@ export function handle(
           });
         }
       }
-      const total = state.currency + reward;
+      const total = resolved.currency + reward;
       const complete = state.encounterNumber === ENCOUNTER_COUNT;
       return {
         state: {
           ...state,
           phase: complete ? "run-complete" : "reward",
           currency: total,
+          rng: resolved.rng,
           inventory: resolved.inventory,
           lastReport: { ...command.report, score: resolved.score },
           scoreBreakdown: resolved.lines,
+          scoreLedger: resolved.ledger,
         },
         events: [
           ...resolved.events,
@@ -632,7 +863,7 @@ export function handle(
             type: "encounter-won",
             encounterId: state.currentEncounter.id,
             score: resolved.score,
-            target: state.currentEncounter.target,
+            target: resolved.target,
           },
           { type: "currency-awarded", amount: reward, total },
           ...(complete
@@ -823,6 +1054,7 @@ export function handle(
           shop: null,
           lastReport: null,
           scoreBreakdown: [],
+          scoreLedger: [],
         },
         events: [{ type: "encounter-prepared", brief: generated.brief }],
       };

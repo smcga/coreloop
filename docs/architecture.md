@@ -271,3 +271,7 @@ If there is no current consumer, defer the abstraction.
 - arbitrary user scripts;
 - a visual effect editor;
 - a general-purpose engine replacing Phaser.
+
+## 0.2 effect pipeline
+
+The bespoke 0.1 score dispatcher has been replaced by the typed deterministic trigger/effect runtime documented in [`effects.md`](effects.md). The latest encounter’s structured ledger is authoritative for score presentation.
