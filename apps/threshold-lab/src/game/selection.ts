@@ -1,36 +1,92 @@
-export const TILE_VALUES = Object.freeze(
-  Array.from({ length: 12 }, (_, index) => index + 1),
-);
-export const SELECTION_LIMIT = 5;
+import type {
+  EncounterBrief,
+  EncounterReport,
+  PlayableTile,
+} from "@core-loop/core";
 
 export interface SelectionState {
-  readonly selected: ReadonlySet<number>;
-  readonly result: number | null;
+  readonly selected: ReadonlySet<string>;
+}
+
+export interface ScoreBreakdown {
+  readonly base: number;
+  readonly pairBonus: number;
+  readonly sequenceBonus: number;
+  readonly matchingTagBonus: number;
+  readonly total: number;
 }
 
 export function initialSelection(): SelectionState {
-  return { selected: new Set(), result: null };
+  return { selected: new Set() };
 }
 
 export function toggleTile(
   state: SelectionState,
-  value: number,
+  tileId: string,
+  limit: number,
 ): SelectionState {
   const selected = new Set(state.selected);
-  if (selected.has(value)) selected.delete(value);
-  else if (selected.size < SELECTION_LIMIT) selected.add(value);
+  if (selected.has(tileId)) selected.delete(tileId);
+  else if (selected.size < limit) selected.add(tileId);
   else return state;
-  return { selected, result: null };
+  return { selected };
 }
 
-export function selectionSum(state: SelectionState): number {
-  return [...state.selected].reduce((sum, value) => sum + value, 0);
+export function calculateScore(tiles: readonly PlayableTile[]): ScoreBreakdown {
+  const base = tiles.reduce((sum, tile) => sum + tile.value, 0);
+  const values = new Map<number, number>();
+  const tags = new Map<string, number>();
+  for (const tile of tiles) {
+    values.set(tile.value, (values.get(tile.value) ?? 0) + 1);
+    for (const tag of tile.tags) tags.set(tag, (tags.get(tag) ?? 0) + 1);
+  }
+  const pairBonus = [...values.values()].some((count) => count >= 2) ? 8 : 0;
+  const unique = [...values.keys()].sort((a, b) => a - b);
+  let longest = unique.length === 0 ? 0 : 1;
+  let current = longest;
+  for (let index = 1; index < unique.length; index += 1) {
+    current = unique[index]! === unique[index - 1]! + 1 ? current + 1 : 1;
+    longest = Math.max(longest, current);
+  }
+  const sequenceBonus = longest >= 3 ? 12 : 0;
+  const matchingTagBonus = [...tags.values()].some((count) => count >= 3)
+    ? 10
+    : 0;
+  return {
+    base,
+    pairBonus,
+    sequenceBonus,
+    matchingTagBonus,
+    total: base + pairBonus + sequenceBonus + matchingTagBonus,
+  };
 }
 
-export function submitSelection(state: SelectionState): SelectionState {
-  return { ...state, result: selectionSum(state) };
+export function selectedTiles(
+  brief: EncounterBrief,
+  state: SelectionState,
+): readonly PlayableTile[] {
+  return brief.tiles.filter((tile) => state.selected.has(tile.id));
 }
 
-export function resetSelection(): SelectionState {
-  return initialSelection();
+export function createEncounterReport(
+  brief: EncounterBrief,
+  state: SelectionState,
+): EncounterReport {
+  const score = calculateScore(selectedTiles(brief, state));
+  return {
+    encounterId: brief.id,
+    score: score.total,
+    tags: [
+      ...(score.pairBonus ? ["pair"] : []),
+      ...(score.sequenceBonus ? ["sequence"] : []),
+      ...(score.matchingTagBonus ? ["matching-tag"] : []),
+    ],
+    metrics: {
+      base: score.base,
+      pairBonus: score.pairBonus,
+      sequenceBonus: score.sequenceBonus,
+      matchingTagBonus: score.matchingTagBonus,
+    },
+    signals: [],
+  };
 }

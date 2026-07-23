@@ -97,6 +97,12 @@ At that stage, add simple scoring patterns:
 
 The exact balance is less important than clear, deterministic presentation.
 
+### Implemented controls and scoring
+
+Starting the lab creates a displayed seeded run and starts its first encounter. Select up to five generated tiles; the live breakdown shows base sum, repeated-value pair bonus, three-value sequence bonus, and three-tile matching-tag bonus. Submit resolves the report through Core Loop, then use **Next encounter** after a win or **Start new run** after failure/victory. Targets rise across all six encounters and each win grants currency.
+
+The **Debug** toggle displays recent commands, events, report scores, and phase changes. It is intended for development diagnosis and is separate from the normal result message.
+
 ## Issue #3 playable slice
 
 Issue #3 completes the recognisable loop with:

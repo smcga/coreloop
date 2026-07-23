@@ -72,6 +72,8 @@ Required rules:
 
 ## Command and event model
 
+Issue #2 implements the first lifecycle as `start-run` → `start-encounter` → `submit-encounter` → `advance`. Submission either moves immediately to run failure or awards currency and permits advancement; the sixth win completes the run. Invalid phase/command combinations preserve the existing state and emit a typed `command-rejected` event.
+
 Framework state changes should pass through a small command API.
 
 Illustrative commands:
@@ -126,6 +128,8 @@ Requirements:
 
 Visual-only variation may use a separate non-authoritative source, provided it cannot affect rules or saved state.
 
+The run engine uses an explicitly implemented **Mulberry32** generator. Its unsigned 32-bit state is stored on `RunState`, every generated tile value and tag advances that state, and fixed test vectors protect replay compatibility. Mulberry32 is suitable here for fast deterministic game logic, not cryptography.
+
 ## Gameplay-module contract
 
 The exact API will evolve through the playable test-bed, but a module will eventually need to provide equivalents of:
@@ -171,6 +175,8 @@ interface EncounterReport {
 ```
 
 The framework can react to signals and reports through generic tags, values and registered handlers. It must not inspect music-, football- or tile-specific object types.
+
+Threshold Lab calculates base and pattern scores in its gameplay module and submits only the generic final report. Core compares its final score with the prepared target; it does not understand selected tiles, pairs, sequences, or matching-tag rules.
 
 ## Content definitions and instances
 
