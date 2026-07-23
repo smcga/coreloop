@@ -18,6 +18,12 @@ import {
   type SelectionState,
 } from "../selection";
 import { terminology } from "../../terminology";
+import {
+  computeEncounterLayout,
+  computeShopLayout,
+  type Rect,
+} from "../ui/Layout";
+import { ui } from "../ui/UiTokens";
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = createInitialRunState();
@@ -76,112 +82,109 @@ export class LabScene extends Phaser.Scene {
 
   private render(): void {
     this.children.removeAll();
-    if (this.run.phase === "shop") {
-      this.renderShop();
-      return;
-    }
+    if (this.run.phase === "shop") return this.renderShop();
     const brief = this.run.currentEncounter;
     if (brief === null) return;
     const { width, height } = this.scale;
     const terms = terminology().terms;
-    const landscape = width > height;
-    const columns = landscape ? 6 : 4;
-    const gap = Math.max(5, Math.min(10, width / 50));
-    const gridWidth = Math.min(width - 20, landscape ? width * 0.64 : 500);
-    const tileSize = Math.max(
-      42,
-      Math.min(
-        (gridWidth - gap * (columns - 1)) / columns,
-        landscape ? (height - 180) / 2 : (height - 300) / 3,
-        82,
-      ),
-    );
-    const actualWidth = columns * tileSize + (columns - 1) * gap;
-    const startX = (width - actualWidth) / 2 + tileSize / 2;
-    const startY = landscape ? 105 : 170;
+    const resolved = this.run.phase !== "encounter-active";
+    const layout = computeEncounterLayout(width, height, {
+      tileCount: brief.tiles.length,
+      debugOpen: this.debug,
+      resolved,
+    });
     const chosen = selectedTiles(brief, this.selection);
     const score = calculateScore(chosen);
 
     this.textButton(
-      12,
-      12,
+      layout.header.x,
+      layout.header.y,
       "‹ Menu",
       () => this.scene.start("menu"),
       false,
-      110,
+      88,
     );
     this.add
-      .text(width / 2, 15, "THRESHOLD LAB", {
-        fontFamily: "system-ui",
-        fontSize: landscape ? "19px" : "22px",
+      .text(width / 2, layout.header.y + 4, "THRESHOLD LAB", {
+        fontFamily: ui.font,
+        fontSize: layout.mode === "compact" ? "18px" : "24px",
         fontStyle: "bold",
         color: palette.text,
       })
       .setOrigin(0.5, 0);
     this.textButton(
-      width - 86,
-      12,
-      this.debug ? "Hide log" : "Debug",
+      layout.header.x + layout.header.width - 82,
+      layout.header.y,
+      this.debug ? "Close" : "Debug",
       () => {
         this.debug = !this.debug;
         this.render();
       },
       false,
-      74,
+      82,
     );
+
+    const hudFont = layout.mode === "compact" ? "14px" : "17px";
     this.add
       .text(
         width / 2,
-        48,
-        `${terms.run.singular.toUpperCase()} ${brief.number} / 6   •   ${terms.target.singular.toUpperCase()} ${brief.target}   •   ${this.run.currency} ${terms.currency.plural}`,
+        layout.hud.y + 2,
+        `${terms.run.singular.toUpperCase()} ${brief.number}/6  •  ${terms.target.singular.toUpperCase()} ${brief.target}  •  ${this.run.currency} ${terms.currency.plural}`,
         {
-          fontFamily: "system-ui",
-          fontSize: landscape ? "16px" : "18px",
+          fontFamily: ui.font,
+          fontSize: hudFont,
           fontStyle: "bold",
           color: "#38bdf8",
+          align: "center",
+          wordWrap: { width: layout.hud.width },
         },
       )
       .setOrigin(0.5, 0);
-    if (brief.specialRule)
-      this.add
-        .text(
-          width / 2,
-          120,
-          brief.specialRule === "reduced-limit"
-            ? "⚠ BOSS: one fewer selection"
-            : "⚠ BOSS: cyan tiles lose 5",
-          {
-            fontFamily: "system-ui",
-            fontSize: "15px",
-            fontStyle: "bold",
-            color: palette.warning,
-          },
-        )
-        .setOrigin(0.5, 0);
     this.add
       .text(
         width / 2,
-        74,
-        `Seed ${this.run.seed}   •   Score ${score.total}   •   ${this.selection.selected.size} / ${brief.selectionLimit}`,
-        { fontFamily: "system-ui", fontSize: "15px", color: palette.text },
+        layout.hud.y + 24,
+        `Seed ${this.run.seed}  •  Score ${score.total}  •  ${this.selection.selected.size}/${brief.selectionLimit}`,
+        { fontFamily: ui.font, fontSize: "13px", color: palette.text },
       )
       .setOrigin(0.5, 0);
     this.add
       .text(
         width / 2,
-        96,
-        `Base ${score.base}  Pair +${score.pairBonus}  Sequence +${score.sequenceBonus}  Tags +${score.matchingTagBonus}`,
+        layout.hud.y + 43,
+        brief.specialRule
+          ? brief.specialRule === "reduced-limit"
+            ? "⚠ One fewer selection"
+            : "⚠ Cyan tiles lose 5"
+          : `Base ${score.base}  •  Pair +${score.pairBonus}  •  Sequence +${score.sequenceBonus}  •  Tags +${score.matchingTagBonus}`,
         {
-          fontFamily: "system-ui",
-          fontSize: landscape ? "13px" : "14px",
-          color: palette.muted,
+          fontFamily: ui.font,
+          fontSize: "12px",
+          color: brief.specialRule ? palette.warning : palette.muted,
+          align: "center",
+          wordWrap: { width: layout.hud.width },
         },
       )
       .setOrigin(0.5, 0);
 
+    const rows = Math.ceil(brief.tiles.length / layout.columns);
+    const gridWidth =
+      layout.columns * layout.tileSize + (layout.columns - 1) * layout.gap;
+    const gridHeight = rows * layout.tileSize + (rows - 1) * layout.gap;
+    const startX =
+      layout.board.x +
+      (layout.board.width - gridWidth) / 2 +
+      layout.tileSize / 2;
+    const startY =
+      layout.board.y +
+      (layout.board.height - gridHeight) / 2 +
+      layout.tileSize / 2;
     brief.tiles.forEach((tile, index) => {
-      const x = startX + (index % columns) * (tileSize + gap);
-      const y = startY + Math.floor(index / columns) * (tileSize + gap);
+      const x =
+        startX + (index % layout.columns) * (layout.tileSize + layout.gap);
+      const y =
+        startY +
+        Math.floor(index / layout.columns) * (layout.tileSize + layout.gap);
       const selected = this.selection.selected.has(tile.id);
       const tagColour =
         tile.tags[0] === "cyan"
@@ -193,42 +196,42 @@ export class LabScene extends Phaser.Scene {
         .rectangle(
           x,
           y,
-          tileSize,
-          tileSize,
+          layout.tileSize,
+          layout.tileSize,
           selected ? palette.selected : palette.panel,
         )
         .setStrokeStyle(selected ? 5 : 3, selected ? 0xffffff : tagColour);
-      if (this.run.phase === "encounter-active" && !this.inputLocked)
+      if (!resolved && !this.inputLocked)
         shape
           .setInteractive({ useHandCursor: true })
           .on("pointerdown", () => this.toggle(tile.id));
       this.add
-        .text(x, y - 5, selected ? `✓ ${tile.value}` : String(tile.value), {
-          fontFamily: "system-ui",
-          fontSize: `${Math.max(20, tileSize * 0.32)}px`,
+        .text(x, y - 4, selected ? `✓ ${tile.value}` : String(tile.value), {
+          fontFamily: ui.font,
+          fontSize: `${Math.max(18, layout.tileSize * 0.31)}px`,
           fontStyle: "bold",
           color: palette.text,
         })
         .setOrigin(0.5);
       this.add
-        .text(x, y + tileSize * 0.3, tile.tags[0] ?? "", {
-          fontFamily: "system-ui",
+        .text(x, y + layout.tileSize * 0.3, tile.tags[0] ?? "", {
+          fontFamily: ui.font,
           fontSize: "10px",
           color: palette.muted,
         })
         .setOrigin(0.5);
     });
 
-    const rows = Math.ceil(brief.tiles.length / columns);
-    const controlsY = Math.min(
-      height - 48,
-      startY + rows * (tileSize + gap) + 18,
-    );
-    if (this.run.phase === "encounter-active") {
-      this.control(width / 2 - 82, controlsY, "Submit", () => this.submit());
+    if (!resolved) {
+      this.control(
+        width / 2 - 82,
+        layout.actions.y + layout.actions.height / 2,
+        "Submit",
+        () => this.submit(),
+      );
       this.control(
         width / 2 + 82,
-        controlsY,
+        layout.actions.y + layout.actions.height / 2,
         "Clear",
         () => {
           this.selection = initialSelection();
@@ -238,69 +241,85 @@ export class LabScene extends Phaser.Scene {
         false,
       );
     } else if (this.run.phase === "reward") {
-      this.control(width / 2, controlsY, "Enter shop", () => {
-        this.dispatch({ type: "enter-shop" });
-        this.feedback = "Shop open";
-        this.render();
-      });
-    } else {
-      this.control(width / 2, controlsY, "Start new run", () =>
-        this.startNewRun(),
+      this.control(
+        width / 2,
+        layout.actions.y + layout.actions.height / 2,
+        "Enter shop",
+        () => {
+          this.dispatch({ type: "enter-shop" });
+          this.feedback = "Shop open";
+          this.render();
+        },
       );
-    }
+    } else
+      this.control(
+        width / 2,
+        layout.actions.y + layout.actions.height / 2,
+        "Start new run",
+        () => this.startNewRun(),
+      );
+
     this.add
-      .text(width / 2, Math.min(height - 18, controlsY + 38), this.feedback, {
-        fontFamily: "system-ui",
-        fontSize: "16px",
+      .text(width / 2, layout.feedback.y + 4, this.feedback, {
+        fontFamily: ui.font,
+        fontSize: "15px",
         fontStyle: "bold",
         color: this.run.phase === "run-failed" ? palette.warning : palette.text,
         align: "center",
+        wordWrap: { width: layout.feedback.width - 16 },
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5, 0);
+    const detailRect = layout.details ?? {
+      x: layout.feedback.x,
+      y: layout.feedback.y + 30,
+      width: layout.feedback.width,
+      height: layout.feedback.height - 30,
+    };
     if (this.debug)
-      this.add
-        .text(12, 126, this.log.join("\n"), {
-          fontFamily: "monospace",
-          fontSize: "11px",
-          color: "#d1fae5",
-          backgroundColor: "#0f172eee",
-          padding: { x: 8, y: 6 },
-        })
-        .setDepth(10);
-    if (this.run.scoreLedger.length)
-      this.add
-        .text(
-          width - 12,
-          126,
-          [
-            "SCORE LEDGER",
-            ...this.run.scoreLedger.map((entry) => {
-              const change =
-                entry.operation === "multiply"
-                  ? `×${entry.multiplier!.numerator / entry.multiplier!.denominator}`
-                  : entry.operation === "final"
-                    ? `= ${entry.after}`
-                    : entry.operation === "target"
-                      ? `= ${entry.after}`
-                      : entry.operation === "outcome"
-                        ? ""
-                        : `${(entry.amount ?? 0) >= 0 ? "+" : "−"}${Math.abs(entry.amount ?? 0)}`;
-              const retrigger = entry.retriggered ? " ↻" : "";
-              return `${String(entry.sequence).padStart(2, "0")} ${entry.label}${retrigger}  ${change}`;
-            }),
-          ]
-            .slice(0, landscape ? 10 : 8)
-            .join("\n"),
-          {
-            fontFamily: "monospace",
-            fontSize: landscape ? "12px" : "11px",
-            color: "#fde68a",
-            backgroundColor: "#0f172eee",
-            padding: { x: 8, y: 6 },
-            align: "right",
-          },
-        )
-        .setOrigin(1, 0);
+      this.panelText(
+        detailRect,
+        ["EVENT LOG", ...this.log].slice(-9).join("\n"),
+        "#d1fae5",
+        layout.details ? "11px" : "10px",
+      );
+    else if (resolved && this.run.scoreLedger.length)
+      this.panelText(
+        detailRect,
+        [
+          "SCORE BREAKDOWN",
+          ...this.run.scoreLedger.map(
+            (entry) => `${entry.label}: ${entry.after}`,
+          ),
+        ]
+          .slice(0, layout.details ? 12 : 5)
+          .join("  •  "),
+        "#fde68a",
+        "11px",
+      );
+  }
+
+  private panelText(
+    rect: Rect,
+    value: string,
+    colour: string,
+    fontSize: string,
+  ): void {
+    this.add
+      .rectangle(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        Math.max(1, rect.height),
+        palette.panel,
+      )
+      .setStrokeStyle(1, 0x334155);
+    this.add.text(rect.x + 8, rect.y + 6, value, {
+      fontFamily: ui.mono,
+      fontSize,
+      color: colour,
+      wordWrap: { width: rect.width - 16 },
+      maxLines: Math.max(1, Math.floor((rect.height - 12) / 14)),
+    });
   }
 
   private toggle(id: string): void {
@@ -348,21 +367,29 @@ export class LabScene extends Phaser.Scene {
   private renderShop(): void {
     const { width, height } = this.scale;
     const shop = this.run.shop!;
+    const owned = [
+      ...this.run.inventory.modifiers,
+      ...this.run.inventory.consumables,
+    ];
+    const layout = computeShopLayout(width, height, {
+      offerCount: shop.offers.length,
+      inventoryCount: owned.length,
+    });
     this.textButton(
-      12,
-      12,
+      layout.header.x,
+      layout.header.y,
       "Abandon",
       () => {
         this.dispatch({ type: "abandon-run" });
         this.scene.start("menu");
       },
       false,
-      100,
+      88,
     );
     this.add
-      .text(width / 2, 18, "BUILD SHOP", {
-        fontFamily: "system-ui",
-        fontSize: "24px",
+      .text(width / 2, layout.header.y + 2, "BUILD SHOP", {
+        fontFamily: ui.font,
+        fontSize: layout.mode === "compact" ? "20px" : "26px",
         fontStyle: "bold",
         color: palette.text,
       })
@@ -370,32 +397,66 @@ export class LabScene extends Phaser.Scene {
     this.add
       .text(
         width / 2,
-        52,
+        layout.header.y + 30,
         `¤ ${this.run.currency}  •  Reroll ¤${shop.rerollPrice}`,
-        { fontFamily: "system-ui", fontSize: "17px", color: "#38bdf8" },
+        {
+          fontFamily: ui.font,
+          fontSize: "15px",
+          color: "#38bdf8",
+        },
       )
       .setOrigin(0.5, 0);
+
     shop.offers.forEach((offer, index) => {
       const def = definitionFor(offer.definitionId)!;
-      const y = 100 + index * 112;
+      const card = layout.offers[index]!;
       this.add
-        .rectangle(width / 2, y, Math.min(width - 24, 500), 98, palette.panel)
+        .rectangle(
+          card.x + card.width / 2,
+          card.y + card.height / 2,
+          card.width,
+          card.height,
+          palette.panel,
+        )
         .setStrokeStyle(2, 0x38bdf8);
-      this.add.text(24, y - 34, `${def.name}  •  ${def.rarity}`, {
-        fontFamily: "system-ui",
-        fontSize: "17px",
-        fontStyle: "bold",
-        color: palette.text,
-      });
-      this.add.text(24, y - 8, def.description, {
-        fontFamily: "system-ui",
-        fontSize: "13px",
+      const padding = 12;
+      const buttonWidth = Math.min(96, Math.max(74, card.width * 0.3));
+      const horizontalCard = card.width > 440;
+      const textWidth = horizontalCard
+        ? card.width - buttonWidth - padding * 3
+        : card.width - padding * 2;
+      this.add.text(
+        card.x + padding,
+        card.y + 9,
+        `${def.name}  •  ${def.rarity}`,
+        {
+          fontFamily: ui.font,
+          fontSize: card.height < 90 ? "14px" : "16px",
+          fontStyle: "bold",
+          color: palette.text,
+          wordWrap: { width: textWidth },
+          maxLines: 1,
+        },
+      );
+      this.add.text(card.x + padding, card.y + 34, def.description, {
+        fontFamily: ui.font,
+        fontSize: "12px",
         color: palette.muted,
-        wordWrap: { width: width - 150 },
+        wordWrap: { width: textWidth },
+        maxLines: Math.max(
+          1,
+          Math.floor((card.height - (horizontalCard ? 48 : 84)) / 15),
+        ),
       });
+      const buttonX = horizontalCard
+        ? card.x + card.width - buttonWidth - padding
+        : card.x + padding;
+      const buttonY = horizontalCard
+        ? card.y + (card.height - 42) / 2
+        : card.y + card.height - 48;
       this.textButton(
-        width - 106,
-        y - 22,
+        buttonX,
+        buttonY,
         `Buy ¤${offer.price}`,
         () => {
           const events = this.dispatch({
@@ -409,35 +470,43 @@ export class LabScene extends Phaser.Scene {
           this.render();
         },
         true,
-        94,
+        buttonWidth,
       );
     });
-    const owned = [
-      ...this.run.inventory.modifiers,
-      ...this.run.inventory.consumables,
-    ];
-    this.add.text(
-      16,
-      Math.min(height - 168, 445),
-      `BUILD ${this.run.inventory.modifiers.length}/${this.run.inventory.modifierCapacity}  •  TOOLS ${this.run.inventory.consumables.length}/${this.run.inventory.consumableCapacity}`,
-      {
-        fontFamily: "system-ui",
-        fontSize: "14px",
-        fontStyle: "bold",
-        color: palette.text,
-      },
+
+    this.add
+      .text(
+        layout.inventory.x + 6,
+        layout.inventory.y + 4,
+        `BUILD ${this.run.inventory.modifiers.length}/${this.run.inventory.modifierCapacity}  •  TOOLS ${this.run.inventory.consumables.length}/${this.run.inventory.consumableCapacity}`,
+        {
+          fontFamily: ui.font,
+          fontSize: "13px",
+          fontStyle: "bold",
+          color: palette.text,
+        },
+      )
+      .setOrigin(0, 0);
+    const rowWidth = Math.min(
+      280,
+      layout.inventory.width / Math.max(1, Math.min(2, owned.length)),
     );
     owned.slice(0, 4).forEach((item, index) => {
       const def = definitionFor(item.definitionId)!;
-      const y = Math.min(height - 135, 475) + index * 28;
-      this.add.text(18, y, def.name, {
-        fontFamily: "system-ui",
-        fontSize: "13px",
+      const column = layout.inventory.height < 80 ? index : index % 2;
+      const row = layout.inventory.height < 80 ? 0 : Math.floor(index / 2);
+      const x = layout.inventory.x + 6 + column * rowWidth;
+      const y = layout.inventory.y + 25 + row * 25;
+      this.add.text(x, y, def.name, {
+        fontFamily: ui.font,
+        fontSize: "12px",
         color: palette.muted,
+        maxLines: 1,
+        fixedWidth: rowWidth - 54,
       });
       this.textButton(
-        width - 76,
-        y - 10,
+        x + rowWidth - 50,
+        y - 8,
         "Sell",
         () => {
           this.dispatch({ type: "sell-item", instanceId: item.instanceId });
@@ -445,12 +514,22 @@ export class LabScene extends Phaser.Scene {
           this.render();
         },
         false,
-        62,
+        48,
       );
     });
+    this.add
+      .text(width / 2, layout.feedback.y + 4, this.feedback, {
+        fontFamily: ui.font,
+        fontSize: "13px",
+        color: palette.text,
+        wordWrap: { width: layout.feedback.width },
+        align: "center",
+      })
+      .setOrigin(0.5, 0);
+    const actionY = layout.actions.y + layout.actions.height / 2;
     this.control(
       width / 2 - 82,
-      height - 38,
+      actionY,
       "Reroll",
       () => {
         const events = this.dispatch({ type: "reroll-shop" });
@@ -462,17 +541,10 @@ export class LabScene extends Phaser.Scene {
       },
       false,
     );
-    this.control(width / 2 + 82, height - 38, "Continue", () => {
+    this.control(width / 2 + 82, actionY, "Continue", () => {
       this.dispatch({ type: "leave-shop" });
       this.useOrStart();
     });
-    this.add
-      .text(width / 2, height - 74, this.feedback, {
-        fontFamily: "system-ui",
-        fontSize: "14px",
-        color: palette.text,
-      })
-      .setOrigin(0.5);
   }
 
   private useOrStart(): void {
