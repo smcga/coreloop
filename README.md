@@ -46,7 +46,7 @@ Open Vite's displayed network URL on the phone. Play a complete seeded six-encou
 ## Workspace
 
 - `packages/core` — browser-independent deterministic command/event run engine.
-- `packages/content` — future content-loading boundary.
+- `packages/content` — validated headless content packs, terminology, registries, and instance lifecycle helpers.
 - `packages/phaser` — shared Phaser-facing integration helpers.
 - `packages/testing` — future reusable scenario-test helpers.
 - `apps/threshold-lab` — the playable Phaser test-bed and encounter-specific tile scoring.
@@ -82,6 +82,7 @@ The headless framework packages must not depend on Phaser, the DOM or browser st
 - [`docs/threshold-lab.md`](docs/threshold-lab.md) — playable test-bed specification
 - [`docs/development.md`](docs/development.md) — expected development and verification workflow
 - [`docs/effects.md`](docs/effects.md) — deterministic triggers, operations, chaining, and score ledger
+- [`docs/content.md`](docs/content.md) — content packs, validation, instances, attachments, rewards, and terminology
 - [`docs/issue-1-brief.md`](docs/issue-1-brief.md) — concrete implementation brief for the first issue
 - [`docs/roadmap.md`](docs/roadmap.md) — release progression
 

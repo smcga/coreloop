@@ -174,3 +174,7 @@ Threshold Lab should therefore avoid leaking concepts such as tile coordinates, 
 ## Issue #4 playable slice
 
 Threshold Lab now shows an ordered structured score ledger with gameplay, additive, multiplicative, retrigger, boss-rule, and final contributions. The display reads core ledger entries and does not recalculate modifier outcomes.
+
+## Issue #5 content catalogue
+
+The shipped pack validates 30 passive modifiers, 10 consumables, 12 attachments, six special rules, four strategic loadouts, and three reward-container models. It also defines playable objects, encounters, run upgrades, rarities, and a deterministic shop pool. The menu terminology control immediately switches between Threshold Lab and music nouns and persists independently of authoritative run state.
