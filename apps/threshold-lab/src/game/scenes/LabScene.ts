@@ -99,6 +99,7 @@ export class LabScene extends Phaser.Scene {
         this.markerMeterX +
           (this.markerPosition * this.markerMeterWidth) / 1000,
       );
+    this.render();
   }
 
   private dispatch(command: RunCommand): readonly RunEvent[] {
