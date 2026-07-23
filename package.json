@@ -18,10 +18,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build": "npm run build --workspace @core-loop/threshold-lab",
-    "content:validate": "vitest run packages/content/tests/content.test.ts"
+    "content:validate": "vitest run packages/content/tests/content.test.ts",
+    "saves:validate": "vitest run packages/core/tests/hardening.test.ts -t \"versioned save migrations\"",
+    "replay:verify": "vitest run packages/core/tests/hardening.test.ts -t \"deterministic replay\""
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@types/node": "^22.20.1",
     "eslint": "^9.32.0",
     "globals": "^16.3.0",
     "prettier": "^3.6.2",

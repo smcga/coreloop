@@ -5,6 +5,7 @@ import {
   handle,
   ITEM_DEFINITIONS,
   parseSaveFile,
+  SAVE_FORMAT_VERSION,
   specialRuleForEncounter,
   type EncounterReport,
   type OwnedItem,
@@ -215,12 +216,12 @@ describe("save envelope", () => {
       handle(state, { type: "reroll-shop" }),
     );
   });
-  it("rejects malformed and incompatible saves", () => {
+  it("rejects malformed saves and migrates supported older envelopes", () => {
     expect(parseSaveFile("nope")).toBeNull();
     expect(
       parseSaveFile(
         JSON.stringify({ ...createSaveFile(shop()), formatVersion: 2 }),
       ),
-    ).toBeNull();
+    ).toMatchObject({ formatVersion: SAVE_FORMAT_VERSION });
   });
 });

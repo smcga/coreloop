@@ -29,4 +29,13 @@ describe("RunSaveStore", () => {
     storage.setItem(SAVE_KEY, "{");
     expect(new RunSaveStore(storage).load()).toBeNull();
   });
+  it("exports and imports versioned textual saves with diagnostics", () => {
+    const source = new RunSaveStore(new MemoryStorage());
+    source.save(createInitialRunState());
+    const target = new RunSaveStore(new MemoryStorage());
+    expect(target.importText(source.exportText()!)).toEqual({
+      migratedFrom: null,
+    });
+    expect(target.load()?.run).toEqual(createInitialRunState());
+  });
 });

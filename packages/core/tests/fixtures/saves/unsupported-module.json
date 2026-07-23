@@ -1,0 +1,32 @@
+{
+  "formatVersion": 3,
+  "frameworkVersion": "0.2.0",
+  "content": { "packId": "threshold-lab:default", "packVersion": 3 },
+  "gameplay": {
+    "moduleId": "threshold-lab:combination-grid",
+    "moduleVersion": 99
+  },
+  "savedAt": "2025-10-01T00:00:00.000Z",
+  "run": {
+    "phase": "idle",
+    "seed": null,
+    "rng": { "algorithm": "mulberry32", "value": 0 },
+    "encounterNumber": 0,
+    "currentEncounter": null,
+    "currency": 0,
+    "inventory": {
+      "modifiers": [],
+      "consumables": [],
+      "modifierCapacity": 4,
+      "consumableCapacity": 2
+    },
+    "shop": null,
+    "nextInstanceId": 1,
+    "nextOfferId": 1,
+    "lastReport": null,
+    "scoreBreakdown": [],
+    "scoreLedger": [],
+    "gameplayModuleId": "threshold-lab:combination-grid",
+    "gameplaySession": null
+  }
+}
