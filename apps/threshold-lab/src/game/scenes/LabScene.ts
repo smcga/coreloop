@@ -265,20 +265,33 @@ export class LabScene extends Phaser.Scene {
           padding: { x: 8, y: 6 },
         })
         .setDepth(10);
-    if (this.run.scoreBreakdown.length)
+    if (this.run.scoreLedger.length)
       this.add
         .text(
           width - 12,
           126,
-          this.run.scoreBreakdown
-            .map(
-              (line) =>
-                `${line.label} ${line.operation === "multiply" ? "×" : line.operation === "subtract" ? "−" : "+"}${line.value}`,
-            )
+          [
+            "SCORE LEDGER",
+            ...this.run.scoreLedger.map((entry) => {
+              const change =
+                entry.operation === "multiply"
+                  ? `×${entry.multiplier!.numerator / entry.multiplier!.denominator}`
+                  : entry.operation === "final"
+                    ? `= ${entry.after}`
+                    : entry.operation === "target"
+                      ? `= ${entry.after}`
+                      : entry.operation === "outcome"
+                        ? ""
+                        : `${(entry.amount ?? 0) >= 0 ? "+" : "−"}${Math.abs(entry.amount ?? 0)}`;
+              const retrigger = entry.retriggered ? " ↻" : "";
+              return `${String(entry.sequence).padStart(2, "0")} ${entry.label}${retrigger}  ${change}`;
+            }),
+          ]
+            .slice(0, landscape ? 10 : 8)
             .join("\n"),
           {
             fontFamily: "monospace",
-            fontSize: "12px",
+            fontSize: landscape ? "12px" : "11px",
             color: "#fde68a",
             backgroundColor: "#0f172eee",
             padding: { x: 8, y: 6 },
@@ -313,10 +326,10 @@ export class LabScene extends Phaser.Scene {
     this.dispatch({ type: "submit-encounter", report });
     this.feedback =
       this.run.phase === "run-failed"
-        ? `Run lost — ${report.score} fell short of ${this.run.currentEncounter.target}`
+        ? `Run lost — ${this.run.lastReport?.score} fell short of ${this.run.currentEncounter.target}`
         : this.run.phase === "run-complete"
-          ? `Run won! Final score ${report.score} • Currency ${this.run.currency}`
-          : `Encounter won! ${report.score} ≥ ${this.run.currentEncounter.target}`;
+          ? `Run won! Final score ${this.run.lastReport?.score} • Currency ${this.run.currency}`
+          : `Encounter won! ${this.run.lastReport?.score} ≥ ${this.run.currentEncounter.target}`;
     this.render();
   }
 
