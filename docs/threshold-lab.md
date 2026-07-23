@@ -124,6 +124,12 @@ Suggested starter content:
 - retrigger the first selected tile;
 - lose one selection slot but double final score.
 
+### Implemented 0.1 loop
+
+Every non-final victory opens a three-offer weighted shop. Cards show price, rarity and concise effect text; players can buy, sell, reroll, or continue. The build panel reports passive/tool capacity. Starter content consists of twelve generated tile positions, Cyan Focus, Pair Amplifier, Perfect Reward, Sequence Learner, First Echo, High Risk, Tile Refresh, Limit Pulse, Score Pulse, the reduced-limit round-three rule, and the cyan-penalty round-six rule.
+
+Purchased triggers appear in the ordered score breakdown, while boss rules remain labelled during their encounters. The menu exposes Continue Run, New Run, and Delete Save when a valid browser save exists. Threshold Lab autosaves coherent command results, including open shops and prepared special encounters.
+
 ## Presentation principles
 
 - Touch targets should be at least comfortably thumb-sized.

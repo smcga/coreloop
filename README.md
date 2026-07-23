@@ -41,7 +41,7 @@ Connect the phone and development computer to the same trusted network, then run
 npm run dev -- --host
 ```
 
-Open Vite's displayed network URL on the phone. Play a complete seeded six-encounter run in portrait and landscape, including selection, scoring bonuses, submit, advancement, and starting over after a result. No interaction requires hover, and the page prevents scrolling during play.
+Open Vite's displayed network URL on the phone. Play a complete seeded six-encounter run in portrait and landscape, including shops, a purchase, a reroll, special encounters, and refresh/continue. No interaction requires hover, and the page prevents scrolling during play.
 
 ## Workspace
 
@@ -57,7 +57,7 @@ Starting an experiment creates and displays a numeric run seed. The engine uses 
 
 ## Project status
 
-The repository is at the planning and bootstrap stage. Development starts with a small touch-first test-bed called **Threshold Lab** so every framework addition can be verified in a playable browser build.
+The 0.1 Playable Spine is implemented in the touch-first **Threshold Lab** test-bed: six deterministic encounters now include shops, build growth, special rules, and browser save/resume. The generic data-driven effect system remains planned for 0.2.
 
 - [Phase 1 tracker: 0.1 Playable Spine](https://github.com/smcga/coreloop/issues/10)
 - [Phase 2 tracker: 0.2 Generic Systems](https://github.com/smcga/coreloop/issues/11)
