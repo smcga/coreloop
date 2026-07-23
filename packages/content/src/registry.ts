@@ -258,6 +258,31 @@ export class ContentRegistry {
     return term;
   }
 }
+
+/** Deterministic compatibility predicate used before weighted pool selection. */
+export function isDefinitionCompatible(
+  definition: ContentDefinition,
+  module: { readonly id: string; readonly capabilities: readonly string[] },
+): boolean {
+  const availability = definition.availability;
+  if (!availability) return true;
+  if (
+    availability.supportedModuleIds &&
+    !availability.supportedModuleIds.includes(module.id)
+  )
+    return false;
+  const capabilities = new Set(module.capabilities);
+  const required = [
+    ...(availability.capabilityTags ?? []),
+    ...(availability.requiredCapabilities ?? []),
+  ];
+  return (
+    required.every((capability) => capabilities.has(capability)) &&
+    !(availability.forbiddenCapabilities ?? []).some((capability) =>
+      capabilities.has(capability),
+    )
+  );
+}
 function deepFreeze<T>(v: T): T {
   if (v && typeof v === "object" && !Object.isFrozen(v)) {
     Object.freeze(v);

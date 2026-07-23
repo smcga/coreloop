@@ -42,6 +42,8 @@ Tangible result: a much deeper Threshold Lab content pool exercises passive modi
 
 Tangible result: Timing Lab provides substantially different encounter mechanics while using the same run, shop, economy, content and save systems.
 
+**Implementation status:** implemented; preview and physical-phone acceptance remain human gates before the 0.2 release is tagged manually.
+
 ### Release proof
 
 A player can choose between two encounter games and complete the same surrounding run loop in either. Several modifiers work in both without branches in core.
