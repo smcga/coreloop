@@ -140,6 +140,14 @@ Purchased triggers appear in the ordered score breakdown, while boss rules remai
 - Prevent accidental page scrolling or browser gestures from disrupting active play where practical.
 - Preserve browser accessibility semantics where Phaser/HTML integration allows it.
 
+Threshold Lab calculates menu, encounter, and shop regions from the current
+viewport rather than positioning controls at fixed percentages. The compact,
+regular, and wide layouts reserve distinct header, HUD, board/card, action,
+feedback, inventory, and diagnostic areas. This keeps variable terminology and
+content labels within their panels and makes resize or orientation changes safe.
+The player-facing score breakdown uses a reserved result area; opening Debug
+uses that area on compact screens and a dedicated side panel when space allows.
+
 ## Visual direction
 
 Use a restrained laboratory/prototype theme:

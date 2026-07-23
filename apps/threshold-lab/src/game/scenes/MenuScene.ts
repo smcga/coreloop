@@ -2,6 +2,8 @@ import Phaser from "phaser";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
 import { terminology, toggleTerminology } from "../../terminology";
+import { computeMenuLayout, type Rect } from "../ui/Layout";
+import { ui } from "../ui/UiTokens";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -18,8 +20,43 @@ export class MenuScene extends Phaser.Scene {
     this.children.removeAll();
     const { width, height } = this.scale;
     const terms = terminology().terms;
+    const store = new RunSaveStore(localStorage);
+    const saved = store.load();
+    const actions = [
+      ...(saved
+        ? [
+            {
+              label: `Continue ${terms.run.singular.toLowerCase()}`,
+              action: () => this.scene.start("lab", { run: saved.run }),
+            },
+          ]
+        : []),
+      {
+        label: `New ${terms.run.singular.toLowerCase()}`,
+        action: () => this.scene.start("lab", { fresh: true }),
+      },
+      ...(saved
+        ? [
+            {
+              label: "Delete save",
+              action: () => {
+                store.clear();
+                this.render();
+              },
+            },
+          ]
+        : []),
+      {
+        label: `${terms.encounter.singular} · ${terms["passive-modifier"].singular} · ${terms.currency.plural}`,
+        action: () => {
+          toggleTerminology();
+          this.render();
+        },
+      },
+    ];
+    const layout = computeMenuLayout(width, height, actions.length);
     this.add
-      .text(width / 2, height * 0.3, "THRESHOLD LAB", {
+      .text(width / 2, layout.titleY, "THRESHOLD LAB", {
         fontFamily: "system-ui",
         fontSize: `${Math.min(42, width / 11)}px`,
         fontStyle: "bold",
@@ -29,69 +66,50 @@ export class MenuScene extends Phaser.Scene {
     this.add
       .text(
         width / 2,
-        height * 0.43,
+        layout.subtitleY,
         `Build a ${terms.run.singular.toLowerCase()} through six ${terms.encounter.plural.toLowerCase()}`,
         {
           fontFamily: "system-ui",
           fontSize: `${Math.min(20, width / 20)}px`,
           color: palette.muted,
           align: "center",
-          wordWrap: { width: width * 0.85 },
+          wordWrap: { width: layout.content.width },
         },
       )
       .setOrigin(0.5);
-    const store = new RunSaveStore(localStorage);
-    const saved = store.load();
-    if (saved)
+    actions.forEach((action, index) =>
       this.button(
-        width / 2,
-        height * 0.57,
-        `Continue ${terms.run.singular.toLowerCase()}`,
-        () => this.scene.start("lab", { run: saved.run }),
-      );
-    this.button(
-      width / 2,
-      saved ? height * 0.69 : height * 0.62,
-      `New ${terms.run.singular.toLowerCase()}`,
-      () => this.scene.start("lab", { fresh: true }),
-    );
-    if (saved)
-      this.button(width / 2, height * 0.81, "Delete save", () => {
-        store.clear();
-        this.render();
-      });
-    this.button(
-      width / 2,
-      height * 0.92,
-      `Language: ${terms.encounter.singular} · ${terms["passive-modifier"].singular} · ${terms.currency.plural}`,
-      () => {
-        toggleTerminology();
-        this.render();
-      },
+        layout.buttons[index]!,
+        action.label,
+        action.action,
+        index === actions.length - 1,
+      ),
     );
   }
   private button(
-    x: number,
-    y: number,
+    rect: Rect,
     label: string,
     action: () => void,
+    terminology = false,
   ): void {
     const bg = this.add
       .rectangle(
-        x,
-        y,
-        Math.min(320, this.scale.width * 0.78),
-        64,
-        palette.accent,
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2,
+        rect.width,
+        rect.height,
+        terminology ? palette.panel : palette.accent,
       )
       .setStrokeStyle(3, 0xffffff)
       .setInteractive({ useHandCursor: true });
     this.add
-      .text(x, y, label, {
-        fontFamily: "system-ui",
-        fontSize: "22px",
+      .text(rect.x + rect.width / 2, rect.y + rect.height / 2, label, {
+        fontFamily: ui.font,
+        fontSize: terminology ? "15px" : "20px",
         fontStyle: "bold",
-        color: "#082f49",
+        color: terminology ? palette.text : "#082f49",
+        align: "center",
+        wordWrap: { width: rect.width - 24 },
       })
       .setOrigin(0.5);
     bg.on("pointerdown", action);
