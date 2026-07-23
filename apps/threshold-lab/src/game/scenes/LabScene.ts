@@ -1,12 +1,14 @@
 import Phaser from "phaser";
 import {
   createInitialRunState,
+  definitionFor,
   handle,
   type RunCommand,
   type RunEvent,
   type RunState,
 } from "@core-loop/core";
 import { palette } from "../config";
+import { RunSaveStore } from "../../persistence";
 import {
   calculateScore,
   createEncounterReport,
@@ -23,13 +25,18 @@ export class LabScene extends Phaser.Scene {
   private debug = false;
   private log: string[] = [];
   private inputLocked = false;
+  private readonly saves = new RunSaveStore(localStorage);
 
   constructor() {
     super("lab");
   }
 
-  create(): void {
-    this.startNewRun();
+  create(data: { run?: RunState }): void {
+    if (data.run) {
+      this.run = data.run;
+      this.feedback = "Saved run resumed";
+      this.inputLocked = this.run.phase !== "encounter-active";
+    } else this.startNewRun();
     this.scale.on("resize", this.render, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
       this.scale.off("resize", this.render, this),
@@ -46,6 +53,10 @@ export class LabScene extends Phaser.Scene {
       `${before} → ${this.run.phase}`,
     );
     this.log = this.log.slice(-12);
+    if (!result.events.some((event) => event.type === "command-rejected")) {
+      if (command.type === "abandon-run") this.saves.clear();
+      else this.saves.save(this.run);
+    }
     return result.events;
   }
 
@@ -58,11 +69,16 @@ export class LabScene extends Phaser.Scene {
     this.selection = initialSelection();
     this.feedback = "Select up to five tiles, then submit";
     this.inputLocked = false;
+    this.saves.save(this.run);
     this.render();
   }
 
   private render(): void {
     this.children.removeAll();
+    if (this.run.phase === "shop") {
+      this.renderShop();
+      return;
+    }
     const brief = this.run.currentEncounter;
     if (brief === null) return;
     const { width, height } = this.scale;
@@ -124,6 +140,22 @@ export class LabScene extends Phaser.Scene {
         },
       )
       .setOrigin(0.5, 0);
+    if (brief.specialRule)
+      this.add
+        .text(
+          width / 2,
+          120,
+          brief.specialRule === "reduced-limit"
+            ? "⚠ BOSS: one fewer selection"
+            : "⚠ BOSS: cyan tiles lose 5",
+          {
+            fontFamily: "system-ui",
+            fontSize: "15px",
+            fontStyle: "bold",
+            color: palette.warning,
+          },
+        )
+        .setOrigin(0.5, 0);
     this.add
       .text(
         width / 2,
@@ -203,10 +235,12 @@ export class LabScene extends Phaser.Scene {
         },
         false,
       );
-    } else if (this.run.phase === "encounter-won") {
-      this.control(width / 2, controlsY, "Next encounter", () =>
-        this.advance(),
-      );
+    } else if (this.run.phase === "reward") {
+      this.control(width / 2, controlsY, "Enter shop", () => {
+        this.dispatch({ type: "enter-shop" });
+        this.feedback = "Shop open";
+        this.render();
+      });
     } else {
       this.control(width / 2, controlsY, "Start new run", () =>
         this.startNewRun(),
@@ -231,6 +265,27 @@ export class LabScene extends Phaser.Scene {
           padding: { x: 8, y: 6 },
         })
         .setDepth(10);
+    if (this.run.scoreBreakdown.length)
+      this.add
+        .text(
+          width - 12,
+          126,
+          this.run.scoreBreakdown
+            .map(
+              (line) =>
+                `${line.label} ${line.operation === "multiply" ? "×" : line.operation === "subtract" ? "−" : "+"}${line.value}`,
+            )
+            .join("\n"),
+          {
+            fontFamily: "monospace",
+            fontSize: "12px",
+            color: "#fde68a",
+            backgroundColor: "#0f172eee",
+            padding: { x: 8, y: 6 },
+            align: "right",
+          },
+        )
+        .setOrigin(1, 0);
   }
 
   private toggle(id: string): void {
@@ -272,6 +327,151 @@ export class LabScene extends Phaser.Scene {
     this.selection = initialSelection();
     this.inputLocked = false;
     this.feedback = "New encounter ready — make your selection";
+    this.render();
+  }
+
+  private renderShop(): void {
+    const { width, height } = this.scale;
+    const shop = this.run.shop!;
+    this.textButton(
+      12,
+      12,
+      "Abandon",
+      () => {
+        this.dispatch({ type: "abandon-run" });
+        this.scene.start("menu");
+      },
+      false,
+      100,
+    );
+    this.add
+      .text(width / 2, 18, "BUILD SHOP", {
+        fontFamily: "system-ui",
+        fontSize: "24px",
+        fontStyle: "bold",
+        color: palette.text,
+      })
+      .setOrigin(0.5, 0);
+    this.add
+      .text(
+        width / 2,
+        52,
+        `¤ ${this.run.currency}  •  Reroll ¤${shop.rerollPrice}`,
+        { fontFamily: "system-ui", fontSize: "17px", color: "#38bdf8" },
+      )
+      .setOrigin(0.5, 0);
+    shop.offers.forEach((offer, index) => {
+      const def = definitionFor(offer.definitionId)!;
+      const y = 100 + index * 112;
+      this.add
+        .rectangle(width / 2, y, Math.min(width - 24, 500), 98, palette.panel)
+        .setStrokeStyle(2, 0x38bdf8);
+      this.add.text(24, y - 34, `${def.name}  •  ${def.rarity}`, {
+        fontFamily: "system-ui",
+        fontSize: "17px",
+        fontStyle: "bold",
+        color: palette.text,
+      });
+      this.add.text(24, y - 8, def.description, {
+        fontFamily: "system-ui",
+        fontSize: "13px",
+        color: palette.muted,
+        wordWrap: { width: width - 150 },
+      });
+      this.textButton(
+        width - 106,
+        y - 22,
+        `Buy ¤${offer.price}`,
+        () => {
+          const events = this.dispatch({
+            type: "buy-offer",
+            offerId: offer.id,
+          });
+          this.feedback =
+            events[0]?.type === "command-rejected"
+              ? events[0].reason
+              : "Item purchased";
+          this.render();
+        },
+        true,
+        94,
+      );
+    });
+    const owned = [
+      ...this.run.inventory.modifiers,
+      ...this.run.inventory.consumables,
+    ];
+    this.add.text(
+      16,
+      Math.min(height - 168, 445),
+      `BUILD ${this.run.inventory.modifiers.length}/${this.run.inventory.modifierCapacity}  •  TOOLS ${this.run.inventory.consumables.length}/${this.run.inventory.consumableCapacity}`,
+      {
+        fontFamily: "system-ui",
+        fontSize: "14px",
+        fontStyle: "bold",
+        color: palette.text,
+      },
+    );
+    owned.slice(0, 4).forEach((item, index) => {
+      const def = definitionFor(item.definitionId)!;
+      const y = Math.min(height - 135, 475) + index * 28;
+      this.add.text(18, y, def.name, {
+        fontFamily: "system-ui",
+        fontSize: "13px",
+        color: palette.muted,
+      });
+      this.textButton(
+        width - 76,
+        y - 10,
+        "Sell",
+        () => {
+          this.dispatch({ type: "sell-item", instanceId: item.instanceId });
+          this.feedback = "Item sold";
+          this.render();
+        },
+        false,
+        62,
+      );
+    });
+    this.control(
+      width / 2 - 82,
+      height - 38,
+      "Reroll",
+      () => {
+        const events = this.dispatch({ type: "reroll-shop" });
+        this.feedback =
+          events[0]?.type === "command-rejected"
+            ? events[0].reason
+            : "Offers refreshed";
+        this.render();
+      },
+      false,
+    );
+    this.control(width / 2 + 82, height - 38, "Continue", () => {
+      this.dispatch({ type: "leave-shop" });
+      this.useOrStart();
+    });
+    this.add
+      .text(width / 2, height - 74, this.feedback, {
+        fontFamily: "system-ui",
+        fontSize: "14px",
+        color: palette.text,
+      })
+      .setOrigin(0.5);
+  }
+
+  private useOrStart(): void {
+    const consumable = this.run.inventory.consumables[0];
+    if (consumable) {
+      this.dispatch({
+        type: "use-consumable",
+        instanceId: consumable.instanceId,
+      });
+      this.feedback = `Used ${definitionFor(consumable.definitionId)?.name}`;
+    }
+    this.dispatch({ type: "start-encounter" });
+    this.selection = initialSelection();
+    this.inputLocked = false;
     this.render();
   }
 

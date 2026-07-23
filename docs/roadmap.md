@@ -24,6 +24,8 @@ Tangible result: Threshold Lab becomes a small recognisable roguelite with build
 
 A player can open a URL on a phone, complete or fail a six-encounter run, purchase an upgrade, see it affect later play, face two special encounters and resume after refresh.
 
+**Implementation status:** complete in the Issue #3 implementation; release acceptance, physical-phone verification, merge, and tagging remain human gates.
+
 ## 0.2 — Generic Systems
 
 Tracker: [#11](https://github.com/smcga/coreloop/issues/11)

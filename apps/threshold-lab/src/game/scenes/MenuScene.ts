@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { palette } from "../config";
+import { RunSaveStore } from "../../persistence";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -32,9 +33,23 @@ export class MenuScene extends Phaser.Scene {
         wordWrap: { width: width * 0.85 },
       })
       .setOrigin(0.5);
-    this.button(width / 2, height * 0.62, "Start experiment", () =>
-      this.scene.start("lab"),
+    const store = new RunSaveStore(localStorage);
+    const saved = store.load();
+    if (saved)
+      this.button(width / 2, height * 0.57, "Continue run", () =>
+        this.scene.start("lab", { run: saved.run }),
+      );
+    this.button(
+      width / 2,
+      saved ? height * 0.69 : height * 0.62,
+      "New run",
+      () => this.scene.start("lab", { fresh: true }),
     );
+    if (saved)
+      this.button(width / 2, height * 0.81, "Delete save", () => {
+        store.clear();
+        this.render();
+      });
   }
   private button(
     x: number,

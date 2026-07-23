@@ -72,7 +72,8 @@ export function createEncounterReport(
   brief: EncounterBrief,
   state: SelectionState,
 ): EncounterReport {
-  const score = calculateScore(selectedTiles(brief, state));
+  const chosen = selectedTiles(brief, state);
+  const score = calculateScore(chosen);
   return {
     encounterId: brief.id,
     score: score.total,
@@ -86,6 +87,10 @@ export function createEncounterReport(
       pairBonus: score.pairBonus,
       sequenceBonus: score.sequenceBonus,
       matchingTagBonus: score.matchingTagBonus,
+      firstValue: chosen[0]?.value ?? 0,
+      cyan: chosen.filter((tile) => tile.tags.includes("cyan")).length,
+      amber: chosen.filter((tile) => tile.tags.includes("amber")).length,
+      violet: chosen.filter((tile) => tile.tags.includes("violet")).length,
     },
     signals: [],
   };

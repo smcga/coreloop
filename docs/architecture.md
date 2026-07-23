@@ -72,7 +72,7 @@ Required rules:
 
 ## Command and event model
 
-Issue #2 implements the first lifecycle as `start-run` → `start-encounter` → `submit-encounter` → `advance`. Submission either moves immediately to run failure or awards currency and permits advancement; the sixth win completes the run. Invalid phase/command combinations preserve the existing state and emit a typed `command-rejected` event.
+The 0.1 lifecycle is `start-run` → `start-encounter` → `submit-encounter` → `enter-shop` → shop commands → `leave-shop`. Submission either moves immediately to run failure or awards currency; the sixth win completes the run. Invalid phase/command combinations preserve the existing state and emit a typed `command-rejected` event.
 
 Framework state changes should pass through a small command API.
 
@@ -193,6 +193,43 @@ ModifierInstance
 This distinction supports duplication, scaling values, attachments, transformation and save compatibility.
 
 The first release may use typed handlers for its small content set. The generic trigger/effect representation arrives in Phase 2.
+
+## 0.1 inventory, shops, and effects
+
+The starting loadout grants 10 currency, four passive slots, two consumable slots, and one Score Pulse. Definitions are immutable shared content; an owned instance contains only a stable `instanceId`, a definition reference, disabled state, and numeric stored values. Selling and consuming remove the instance atomically.
+
+Shops are generated as three unique offers by weighted selection through the run RNG. Offer and instance counters are stored in the run, so IDs remain stable across saving. A legal reroll spends its displayed price, generates all offers as one transition, and raises the next price by two. Rejected purchases and rerolls return the original state object and do not advance RNG or spend currency.
+
+The deliberately small typed dispatcher resolves 0.1 effects in this documented order:
+
+1. the gameplay module's base and pattern score;
+2. additive passives (tag bonus, echo, learned bonus);
+3. multiplicative passives (pair amplifier, high risk);
+4. temporary consumable bonus;
+5. special-encounter penalty;
+6. final score and post-result currency effects.
+
+Each applied effect creates a structured score line and/or trigger event. Sequence Learner updates its owned instance after a sequence; that stored value survives subsequent encounters and saves. This explicit dispatcher is not the generic trigger/effect language planned for 0.2. To add temporary 0.1 content, add a typed definition and `EffectType`, then handle it in the appropriate ordered stage (or pre-encounter consumable branch) and cover the transition with a headless test.
+
+Consumables may be used only during `encounter-ready`. A successful use applies its encounter-local field or deterministic tile refresh and removes the instance; rejection leaves it untouched. Encounter-local effects disappear when the next brief is prepared.
+
+Special scheduling lives solely in `specialRuleForEncounter`: round three reduces the selection limit and round six penalises selected cyan tiles. Rules are part of the prepared brief, are announced when play begins, participate after modifiers in scoring, and disappear when the encounter is replaced.
+
+## Browser persistence boundary
+
+Core provides validation and a versioned JSON envelope but never accesses storage. Threshold Lab's `RunSaveStore` is a replaceable adapter over the minimal `getItem`/`setItem`/`removeItem` interface and currently receives `localStorage`.
+
+```ts
+interface SaveFile {
+  formatVersion: 1;
+  frameworkVersion: string;
+  contentVersion: number;
+  savedAt: string;
+  run: RunState;
+}
+```
+
+The complete authoritative state includes phase, RNG, encounter, inventory stored values, offers, and stable-ID counters. The app autosaves only after `handle` returns a successful completed transition. Rejected commands are not saved. On load, malformed or incompatible format/content versions are ignored; the menu offers Continue, New Run, and Delete Save. Abandon clears the browser save. Save migrations, replay compatibility across content releases, and IndexedDB are deliberately deferred.
 
 ## Terminology
 

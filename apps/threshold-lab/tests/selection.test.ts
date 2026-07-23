@@ -35,6 +35,8 @@ describe("Threshold Lab scoring", () => {
       number: 1,
       target: 30,
       selectionLimit: 5,
+      specialRule: null,
+      temporaryScoreBonus: 0,
       tiles,
     };
     let selection = initialSelection();

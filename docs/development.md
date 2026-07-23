@@ -181,3 +181,7 @@ Keep game rules owned by Core Loop rather than hidden in an external state-manag
 - `1.0 — Starter Kit`: stable extension points, simulation/debug tools, PWA delivery, template and third-theme proof.
 
 Release tags should represent the playable definitions of done in the tracker issues, not merely completed package APIs.
+
+## Save verification
+
+For the 0.1 build, refresh in both an open shop and before a special encounter. Continue from the menu and confirm the phase, offers, inventory, active rule, and next reroll remain unchanged. Autosaves occur after successful framework transitions, never while a command is resolving; use Delete Save or Abandon to exercise removal.
