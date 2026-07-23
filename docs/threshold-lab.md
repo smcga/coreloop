@@ -177,6 +177,10 @@ No external art assets are required for the first release. Generated shapes and 
 
 Phase 2 introduces Timing Lab, where a moving marker is stopped by tapping. This module must use the same surrounding run systems while emitting different gameplay signals.
 
+Issue #6 implements this as **Timing Meter**. Four attempts use deterministic integer positions from 0 to 1000, visible fair/good/perfect zones, touch/mouse Stop input, streak feedback, mode-appropriate rules on encounters three and six, generic reports, and the same run/shop/save presentation. An uncommitted moving marker restarts after refresh; committed attempts round-trip in the module-state envelope.
+
+The Phaser presenter moves only the marker object during fixed-step animation. It does not rebuild interactive controls each frame, so every Stop tap remains live through all four attempts. Mode-specific instructions tell Timing Meter players to stop the marker at the bright centre rather than describing Grid selection.
+
 Threshold Lab should therefore avoid leaking concepts such as tile coordinates, grid matches or selected numbers into `packages/core`.
 
 ## Issue #4 playable slice

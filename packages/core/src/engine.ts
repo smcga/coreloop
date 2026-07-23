@@ -5,9 +5,10 @@ import {
   type EffectTrigger,
   type ScoreLedgerEntry,
 } from "./effects";
+import type { GameplaySessionState } from "./gameplay";
 
 export const ENCOUNTER_COUNT = 6;
-export const CONTENT_VERSION = 2;
+export const CONTENT_VERSION = 3;
 export type Rarity = "common" | "uncommon" | "rare";
 export type ItemCategory = "modifier" | "consumable";
 export type EffectType =
@@ -297,9 +298,21 @@ export interface RunState {
   readonly lastReport: EncounterReport | null;
   readonly scoreBreakdown: readonly ScoreLine[];
   readonly scoreLedger: readonly ScoreLedgerEntry[];
+  /** Stable selected adapter identity. Core never branches on this value. */
+  readonly gameplayModuleId: string;
+  /** Adapter-owned JSON. Core stores it without inspecting its data. */
+  readonly gameplaySession: GameplaySessionState | null;
 }
 export type RunCommand =
-  | { readonly type: "start-run"; readonly seed: number }
+  | {
+      readonly type: "start-run";
+      readonly seed: number;
+      readonly gameplayModuleId?: string;
+    }
+  | {
+      readonly type: "store-gameplay-session";
+      readonly session: GameplaySessionState;
+    }
   | { readonly type: "start-encounter" }
   | { readonly type: "submit-encounter"; readonly report: EncounterReport }
   | { readonly type: "enter-shop" }
@@ -398,6 +411,8 @@ export function createInitialRunState(): RunState {
     lastReport: null,
     scoreBreakdown: [],
     scoreLedger: [],
+    gameplayModuleId: "threshold-lab:combination-grid",
+    gameplaySession: null,
   };
 }
 export function targetForEncounter(number: number): number {
@@ -763,6 +778,9 @@ export function handle(
         currentEncounter: generated.brief,
         currency: 10,
         inventory,
+        gameplayModuleId:
+          command.gameplayModuleId ?? "threshold-lab:combination-grid",
+        gameplaySession: null,
       };
       return {
         state: next,
@@ -770,6 +788,27 @@ export function handle(
           { type: "run-started", seed },
           { type: "encounter-prepared", brief: generated.brief },
         ],
+      };
+    }
+    case "store-gameplay-session": {
+      if (command.session.moduleId !== state.gameplayModuleId)
+        return reject(
+          state,
+          command,
+          "Gameplay session module does not match the run",
+        );
+      if (
+        !state.currentEncounter ||
+        command.session.encounterId !== state.currentEncounter.id
+      )
+        return reject(
+          state,
+          command,
+          "Gameplay session does not match the encounter",
+        );
+      return {
+        state: { ...state, gameplaySession: command.session },
+        events: [],
       };
     }
     case "start-encounter": {
@@ -1051,6 +1090,7 @@ export function handle(
           rng: generated.rng,
           encounterNumber: number,
           currentEncounter: generated.brief,
+          gameplaySession: null,
           shop: null,
           lastReport: null,
           scoreBreakdown: [],

@@ -30,6 +30,9 @@ export interface Availability {
   readonly requiredOwnedIds?: readonly string[];
   readonly maximumCopies?: number;
   readonly capabilityTags?: readonly string[];
+  readonly requiredCapabilities?: readonly string[];
+  readonly forbiddenCapabilities?: readonly string[];
+  readonly supportedModuleIds?: readonly string[];
 }
 export interface BaseDefinition {
   readonly id: string;

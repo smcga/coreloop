@@ -49,7 +49,7 @@ Open Vite's displayed network URL on the phone. Play a complete seeded six-encou
 - `packages/content` — validated headless content packs, terminology, registries, and instance lifecycle helpers.
 - `packages/phaser` — shared Phaser-facing integration helpers.
 - `packages/testing` — future reusable scenario-test helpers.
-- `apps/threshold-lab` — the playable Phaser test-bed and encounter-specific tile scoring.
+- `apps/threshold-lab` — the playable Phaser test-bed with Combination Grid and Timing Meter modules.
 
 ## Seeded runs and diagnostics
 
@@ -57,7 +57,7 @@ Starting an experiment creates and displays a numeric run seed. The engine uses 
 
 ## Project status
 
-The 0.1 Playable Spine is implemented in the touch-first **Threshold Lab** test-bed: six deterministic encounters now include shops, build growth, special rules, and browser save/resume. The generic data-driven effect system remains planned for 0.2.
+The 0.2 Generic Systems implementation is demonstrated in the touch-first **Threshold Lab** test-bed: players choose Combination Grid or Timing Meter while sharing the deterministic six-encounter run, shops, effects, content, terminology, and browser save/resume.
 
 - [Phase 1 tracker: 0.1 Playable Spine](https://github.com/smcga/coreloop/issues/10)
 - [Phase 2 tracker: 0.2 Generic Systems](https://github.com/smcga/coreloop/issues/11)
@@ -82,6 +82,7 @@ The headless framework packages must not depend on Phaser, the DOM or browser st
 - [`docs/threshold-lab.md`](docs/threshold-lab.md) — playable test-bed specification
 - [`docs/development.md`](docs/development.md) — expected development and verification workflow
 - [`docs/effects.md`](docs/effects.md) — deterministic triggers, operations, chaining, and score ledger
+- [`docs/gameplay-modules.md`](docs/gameplay-modules.md) — replaceable gameplay contract, capabilities, saves, and deterministic actions
 - [`docs/content.md`](docs/content.md) — content packs, validation, instances, attachments, rewards, and terminology
 - [`docs/issue-1-brief.md`](docs/issue-1-brief.md) — concrete implementation brief for the first issue
 - [`docs/roadmap.md`](docs/roadmap.md) — release progression

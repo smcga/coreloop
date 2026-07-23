@@ -6,6 +6,7 @@ import {
   detach,
   duplicateInstance,
   formatTerm,
+  isDefinitionCompatible,
   selectWeighted,
   thresholdLabContentPack,
   transformInstance,
@@ -20,6 +21,31 @@ const broken = (change: Partial<ContentPack>): ContentPack => ({
 });
 
 describe("content-pack validation and index", () => {
+  it("filters definitions through declared gameplay capabilities", () => {
+    const shared = registry.get("threshold-lab:steady-growth");
+    const gridOnly = {
+      ...shared,
+      availability: { requiredCapabilities: ["selection", "pair-pattern"] },
+    };
+    expect(
+      isDefinitionCompatible(shared, {
+        id: "lab:timing",
+        capabilities: ["score"],
+      }),
+    ).toBe(true);
+    expect(
+      isDefinitionCompatible(gridOnly, {
+        id: "lab:grid",
+        capabilities: ["selection", "pair-pattern"],
+      }),
+    ).toBe(true);
+    expect(
+      isDefinitionCompatible(gridOnly, {
+        id: "lab:timing",
+        capabilities: ["score", "accuracy"],
+      }),
+    ).toBe(false);
+  });
   it("loads every shipped category in canonical authored order", () => {
     expect(validateContentPack(thresholdLabContentPack)).toEqual([]);
     expect(
