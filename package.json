@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "npm run build --workspace @core-loop/threshold-lab"
+    "build": "npm run build --workspace @core-loop/threshold-lab",
+    "content:validate": "vitest run packages/content/tests/content.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

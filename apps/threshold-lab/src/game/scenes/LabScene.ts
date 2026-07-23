@@ -17,6 +17,7 @@ import {
   toggleTile,
   type SelectionState,
 } from "../selection";
+import { terminology } from "../../terminology";
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = createInitialRunState();
@@ -82,6 +83,7 @@ export class LabScene extends Phaser.Scene {
     const brief = this.run.currentEncounter;
     if (brief === null) return;
     const { width, height } = this.scale;
+    const terms = terminology().terms;
     const landscape = width > height;
     const columns = landscape ? 6 : 4;
     const gap = Math.max(5, Math.min(10, width / 50));
@@ -131,7 +133,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         48,
-        `RUN ${brief.number} / 6   •   TARGET ${brief.target}   •   ¤ ${this.run.currency}`,
+        `${terms.run.singular.toUpperCase()} ${brief.number} / 6   •   ${terms.target.singular.toUpperCase()} ${brief.target}   •   ${this.run.currency} ${terms.currency.plural}`,
         {
           fontFamily: "system-ui",
           fontSize: landscape ? "16px" : "18px",

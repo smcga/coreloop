@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@core-loop/core": "0.1.0",
+    "@core-loop/content": "0.1.0",
     "@core-loop/phaser": "0.1.0",
     "phaser": "^3.90.0"
   }

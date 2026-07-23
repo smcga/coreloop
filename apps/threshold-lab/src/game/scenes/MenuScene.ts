@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
+import { terminology, toggleTerminology } from "../../terminology";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -16,6 +17,7 @@ export class MenuScene extends Phaser.Scene {
   private render(): void {
     this.children.removeAll();
     const { width, height } = this.scale;
+    const terms = terminology().terms;
     this.add
       .text(width / 2, height * 0.3, "THRESHOLD LAB", {
         fontFamily: "system-ui",
@@ -25,24 +27,32 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.add
-      .text(width / 2, height * 0.43, "The touch-first Core Loop test-bed", {
-        fontFamily: "system-ui",
-        fontSize: `${Math.min(20, width / 20)}px`,
-        color: palette.muted,
-        align: "center",
-        wordWrap: { width: width * 0.85 },
-      })
+      .text(
+        width / 2,
+        height * 0.43,
+        `Build a ${terms.run.singular.toLowerCase()} through six ${terms.encounter.plural.toLowerCase()}`,
+        {
+          fontFamily: "system-ui",
+          fontSize: `${Math.min(20, width / 20)}px`,
+          color: palette.muted,
+          align: "center",
+          wordWrap: { width: width * 0.85 },
+        },
+      )
       .setOrigin(0.5);
     const store = new RunSaveStore(localStorage);
     const saved = store.load();
     if (saved)
-      this.button(width / 2, height * 0.57, "Continue run", () =>
-        this.scene.start("lab", { run: saved.run }),
+      this.button(
+        width / 2,
+        height * 0.57,
+        `Continue ${terms.run.singular.toLowerCase()}`,
+        () => this.scene.start("lab", { run: saved.run }),
       );
     this.button(
       width / 2,
       saved ? height * 0.69 : height * 0.62,
-      "New run",
+      `New ${terms.run.singular.toLowerCase()}`,
       () => this.scene.start("lab", { fresh: true }),
     );
     if (saved)
@@ -50,6 +60,15 @@ export class MenuScene extends Phaser.Scene {
         store.clear();
         this.render();
       });
+    this.button(
+      width / 2,
+      height * 0.92,
+      `Language: ${terms.encounter.singular} · ${terms["passive-modifier"].singular} · ${terms.currency.plural}`,
+      () => {
+        toggleTerminology();
+        this.render();
+      },
+    );
   }
   private button(
     x: number,

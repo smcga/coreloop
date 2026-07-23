@@ -1,2 +1,4 @@
-/** Package marker; content schemas intentionally arrive in a later issue. */
-export const CONTENT_PACKAGE_ID = "@core-loop/content" as const;
+export * from "./model";
+export * from "./registry";
+export * from "./instances";
+export { thresholdLabContentPack } from "./threshold-lab";
