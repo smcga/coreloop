@@ -1,0 +1,12 @@
+{
+  "name": "@core-loop/simulation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@core-loop/core": "0.1.0",
+    "@core-loop/content": "0.1.0",
+    "@core-loop/threshold-lab": "0.1.0"
+  }
+}

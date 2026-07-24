@@ -20,7 +20,9 @@
     "build": "npm run build --workspace @core-loop/threshold-lab",
     "content:validate": "vitest run packages/content/tests/content.test.ts",
     "saves:validate": "vitest run packages/core/tests/hardening.test.ts -t \"versioned save migrations\"",
-    "replay:verify": "vitest run packages/core/tests/hardening.test.ts -t \"deterministic replay\""
+    "replay:verify": "vitest run packages/core/tests/hardening.test.ts -t \"deterministic replay\"",
+    "simulate": "vite-node tools/simulate.ts",
+    "simulate:smoke": "vitest run packages/simulation/tests/simulation.test.ts -t \"CI smoke\""
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

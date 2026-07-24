@@ -49,6 +49,7 @@ Open Vite's displayed network URL on the phone. Play a complete seeded six-encou
 - `packages/content` — validated headless content packs, terminology, registries, and instance lifecycle helpers.
 - `packages/phaser` — shared Phaser-facing integration helpers.
 - `packages/testing` — future reusable scenario-test helpers.
+- `packages/simulation` — deterministic Node batch runs, aggregate metrics, and report formatting.
 - `apps/threshold-lab` — the playable Phaser test-bed with Combination Grid and Timing Meter modules.
 
 ## Seeded runs and diagnostics
@@ -84,6 +85,7 @@ The headless framework packages must not depend on Phaser, the DOM or browser st
 - [`docs/effects.md`](docs/effects.md) — deterministic triggers, operations, chaining, and score ledger
 - [`docs/gameplay-modules.md`](docs/gameplay-modules.md) — replaceable gameplay contract, capabilities, saves, and deterministic actions
 - [`docs/compatibility-and-replay.md`](docs/compatibility-and-replay.md) — extension policies, migrations, canonical hashes, and replay verification
+- [`docs/simulation-and-devtools.md`](docs/simulation-and-devtools.md) — simulator CLI, report schema, content browser, inspector models, and balance finding
 - [`docs/content.md`](docs/content.md) — content packs, validation, instances, attachments, rewards, and terminology
 - [`docs/issue-1-brief.md`](docs/issue-1-brief.md) — concrete implementation brief for the first issue
 - [`docs/roadmap.md`](docs/roadmap.md) — release progression
