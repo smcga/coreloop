@@ -171,7 +171,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
     description: "One fewer selection; final score ×2",
     rarity: "rare",
     weight: 2,
-    basePrice: 18,
+    basePrice: 11,
     effectType: "high-risk",
     parameters: { multiplier: 2 },
     triggers: [

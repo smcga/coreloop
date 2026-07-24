@@ -19,3 +19,55 @@ body,
 canvas {
   display: block;
 }
+.content-browser {
+  position: fixed;
+  z-index: 20;
+  inset: 1rem 1rem 1rem auto;
+  width: min(32rem, calc(100% - 2rem));
+  padding: 1rem;
+  overflow: auto;
+  touch-action: pan-y;
+  background: #15243a;
+  border: 1px solid #4f7199;
+  border-radius: 1rem;
+  box-shadow: 0 1rem 3rem #0009;
+}
+.content-browser header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.2rem;
+}
+.content-browser label {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.75rem 0;
+}
+.content-browser input,
+.content-browser select,
+.content-browser button {
+  min-height: 44px;
+  color: inherit;
+  background: #203652;
+  border: 1px solid #6584a7;
+  border-radius: 0.5rem;
+  padding: 0.55rem;
+}
+.content-results {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 35vh;
+  overflow: auto;
+}
+.content-results button {
+  text-align: left;
+}
+.content-results small {
+  color: #bed0e5;
+}
+.content-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #0d1827;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+}

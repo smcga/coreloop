@@ -4,5 +4,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "vite.config.ts"]
+  "include": [
+    "apps/**/*.ts",
+    "packages/**/*.ts",
+    "tools/**/*.ts",
+    "vite.config.ts"
+  ]
 }
