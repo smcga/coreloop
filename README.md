@@ -54,7 +54,7 @@ Open Vite's displayed network URL on the phone. Play a complete seeded six-encou
 
 ## Seeded runs and diagnostics
 
-Starting an experiment creates and displays a numeric run seed. The engine uses that seed for the entire encounter schedule; the same seed and command sequence reproduce the same generated tiles. Threshold Lab's small **Debug** button shows recent commands, ordered events, reports, and phase transitions without replacing the player-facing result display.
+Starting an experiment creates and displays a numeric run seed. The engine uses that seed for the entire encounter schedule; the same seed, framework commands, and module actions reproduce the same module-owned encounter state. Threshold Lab's small **Debug** button shows recent commands, ordered events, reports, and phase transitions without replacing the player-facing result display.
 
 ## Project status
 
@@ -95,3 +95,7 @@ Start with the [`documentation index`](docs/getting-started.md), or create a tex
 ## Guiding rule
 
 Every substantial framework change must produce a visible improvement in a playable test-bed during the same delivery phase. Core Loop should not accumulate speculative abstractions that cannot yet be exercised by a game.
+
+### Gameplay-neutral core boundary
+
+`packages/core` prepares only encounter identity, number, target, versioned rule references, and a derived module seed. Applications select a namespaced gameplay module, which creates and validates all mechanic state. Concrete catalogues and presentation copy are composed from `packages/content`; use `createRunEngine(configuration)` rather than adding a concrete ID branch to core.

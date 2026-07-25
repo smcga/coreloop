@@ -1,20 +1,18 @@
 import Phaser from "phaser";
 import {
-  createInitialRunState,
-  definitionFor,
-  handle,
+  createRunEngine,
   type RunCommand,
   type RunEvent,
   type RunState,
 } from "@core-loop/core";
+import { thresholdLabRunConfiguration } from "@core-loop/content";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
 import {
   calculateScore,
-  createEncounterReport,
   initialSelection,
-  selectedTiles,
-  toggleTile,
+  selectedObjects,
+  toggleObject,
   type SelectionState,
 } from "../selection";
 import { terminology } from "../../terminology";
@@ -29,12 +27,16 @@ import {
   gameplayInstruction,
   TIMING_METER_ID,
   timingMeterModule,
+  combinationGridModule,
+  type CombinationGridState,
   type TimingMeterState,
 } from "../../gameplay/modules";
 import { advanceTimingMarker } from "../timingPresentation";
 
+const runEngine = createRunEngine(thresholdLabRunConfiguration);
+
 export class LabScene extends Phaser.Scene {
-  private run: RunState = createInitialRunState();
+  private run: RunState = runEngine.createInitialState();
   private selection: SelectionState = initialSelection();
   private feedback = "Select up to five tiles, then submit";
   private debug = false;
@@ -42,6 +44,7 @@ export class LabScene extends Phaser.Scene {
   private inputLocked = false;
   private readonly saves = new RunSaveStore(localStorage);
   private timing: TimingMeterState | null = null;
+  private grid: CombinationGridState | null = null;
   private markerPosition = 0;
   private markerDirection = 1;
   private lastFrame = 0;
@@ -63,6 +66,13 @@ export class LabScene extends Phaser.Scene {
         this.run.gameplaySession
       )
         this.timing = timingMeterModule.validateState(
+          this.run.gameplaySession.data,
+        );
+      if (
+        this.run.gameplayModuleId === COMBINATION_GRID_ID &&
+        this.run.gameplaySession
+      )
+        this.grid = combinationGridModule.validateState(
           this.run.gameplaySession.data,
         );
       if (this.timing) {
@@ -104,7 +114,7 @@ export class LabScene extends Phaser.Scene {
 
   private dispatch(command: RunCommand): readonly RunEvent[] {
     const before = this.run.phase;
-    const result = handle(this.run, command);
+    const result = runEngine.handle(this.run, command);
     this.run = result.state;
     this.log.push(
       `> ${command.type}`,
@@ -124,11 +134,12 @@ export class LabScene extends Phaser.Scene {
     requestedSeed?: number,
   ): void {
     const seed = requestedSeed ?? Date.now() >>> 0;
-    this.run = createInitialRunState();
+    this.run = runEngine.createInitialState();
     this.log = [];
     this.dispatch({ type: "start-run", seed, gameplayModuleId: moduleId });
     this.dispatch({ type: "start-encounter" });
     if (moduleId === TIMING_METER_ID) this.initialiseTiming();
+    else this.initialiseGrid();
     this.selection = initialSelection();
     this.feedback = gameplayInstruction(moduleId);
     this.inputLocked = false;
@@ -142,16 +153,20 @@ export class LabScene extends Phaser.Scene {
     if (this.run.gameplayModuleId === TIMING_METER_ID)
       return this.renderTiming();
     const brief = this.run.currentEncounter;
-    if (brief === null) return;
+    const grid = this.grid;
+    if (brief === null || grid === null) return;
     const { width, height } = this.scale;
     const terms = terminology().terms;
     const resolved = this.run.phase !== "encounter-active";
     const layout = computeEncounterLayout(width, height, {
-      tileCount: brief.tiles.length,
+      tileCount: grid.objects.length,
       debugOpen: this.debug,
       resolved,
     });
-    const chosen = selectedTiles(brief, this.selection);
+    const chosen = selectedObjects(
+      { id: brief.id, objects: grid.objects },
+      this.selection,
+    );
     const score = calculateScore(chosen);
 
     this.textButton(
@@ -202,7 +217,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 24,
-        `Seed ${this.run.seed}  •  Score ${score.total}  •  ${this.selection.selected.size}/${brief.selectionLimit}`,
+        `Seed ${this.run.seed}  •  Score ${score.total}  •  ${this.selection.selected.size}/${grid.selectionLimit}`,
         { fontFamily: ui.font, fontSize: "13px", color: palette.text },
       )
       .setOrigin(0.5, 0);
@@ -210,22 +225,24 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 43,
-        brief.specialRule
-          ? brief.specialRule === "reduced-limit"
+        brief.rules.length
+          ? brief.rules.some(
+              (rule) => rule.id === "threshold-lab:reduced-selection",
+            )
             ? "⚠ One fewer selection"
             : "⚠ Cyan tiles lose 5"
           : `Base ${score.base}  •  Pair +${score.pairBonus}  •  Sequence +${score.sequenceBonus}  •  Tags +${score.matchingTagBonus}`,
         {
           fontFamily: ui.font,
           fontSize: "12px",
-          color: brief.specialRule ? palette.warning : palette.muted,
+          color: brief.rules.length ? palette.warning : palette.muted,
           align: "center",
           wordWrap: { width: layout.hud.width },
         },
       )
       .setOrigin(0.5, 0);
 
-    const rows = Math.ceil(brief.tiles.length / layout.columns);
+    const rows = Math.ceil(grid.objects.length / layout.columns);
     const gridWidth =
       layout.columns * layout.tileSize + (layout.columns - 1) * layout.gap;
     const gridHeight = rows * layout.tileSize + (rows - 1) * layout.gap;
@@ -237,7 +254,7 @@ export class LabScene extends Phaser.Scene {
       layout.board.y +
       (layout.board.height - gridHeight) / 2 +
       layout.tileSize / 2;
-    brief.tiles.forEach((tile, index) => {
+    grid.objects.forEach((tile, index) => {
       const x =
         startX + (index % layout.columns) * (layout.tileSize + layout.gap);
       const y =
@@ -356,20 +373,36 @@ export class LabScene extends Phaser.Scene {
       );
   }
 
+  private initialiseGrid(): void {
+    const brief = this.run.currentEncounter!;
+    const created = combinationGridModule.createEncounter({
+      encounterId: brief.id,
+      encounterNumber: brief.number,
+      target: brief.target,
+      rules: brief.rules,
+      seed: brief.moduleSeed,
+    });
+    this.grid = created.state;
+    this.dispatch({
+      type: "store-gameplay-session",
+      session: {
+        moduleId: COMBINATION_GRID_ID,
+        moduleVersion: combinationGridModule.version,
+        encounterId: brief.id,
+        data: this.grid as unknown as import("@core-loop/core").JsonValue,
+      },
+    });
+  }
+
   private initialiseTiming(): void {
     const brief = this.run.currentEncounter!;
-    const specialRuleId =
-      brief.number === 3
-        ? "timing:faster-marker"
-        : brief.number === 6
-          ? "timing:narrow-zones"
-          : null;
+    const rules = brief.rules;
     const created = timingMeterModule.createEncounter({
       encounterId: brief.id,
       encounterNumber: brief.number,
       target: brief.target,
-      specialRuleId,
-      rng: this.run.rng,
+      rules,
+      seed: brief.moduleSeed,
     });
     this.timing = created.state;
     this.markerPosition = created.state.initialDirection === 1 ? 0 : 1000;
@@ -582,11 +615,7 @@ export class LabScene extends Phaser.Scene {
   }
 
   private toggle(id: string): void {
-    const next = toggleTile(
-      this.selection,
-      id,
-      this.run.currentEncounter!.selectionLimit,
-    );
+    const next = toggleObject(this.selection, id, this.grid!.selectionLimit);
     this.feedback =
       next === this.selection
         ? "Limit reached — deselect a tile first"
@@ -598,10 +627,16 @@ export class LabScene extends Phaser.Scene {
   private submit(): void {
     if (this.inputLocked || this.run.currentEncounter === null) return;
     this.inputLocked = true;
-    const report = createEncounterReport(
-      this.run.currentEncounter,
-      this.selection,
-    );
+    if (!this.grid) return;
+    this.grid = {
+      ...this.grid,
+      selectedIds: [...this.selection.selected],
+      complete: true,
+    };
+    const report = combinationGridModule.createReport(this.grid, {
+      encounterId: this.run.currentEncounter.id,
+      encounterNumber: this.run.encounterNumber,
+    });
     this.log.push(`report score=${report.score}`);
     this.dispatch({ type: "submit-encounter", report });
     this.feedback =
@@ -618,6 +653,7 @@ export class LabScene extends Phaser.Scene {
     this.dispatch({ type: "advance" });
     this.dispatch({ type: "start-encounter" });
     if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
+    else this.initialiseGrid();
     this.selection = initialSelection();
     this.inputLocked = false;
     this.feedback = "New encounter ready — make your selection";
@@ -668,7 +704,7 @@ export class LabScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
 
     shop.offers.forEach((offer, index) => {
-      const def = definitionFor(offer.definitionId)!;
+      const def = runEngine.definitionFor(offer.definitionId)!;
       const card = layout.offers[index]!;
       this.add
         .rectangle(
@@ -752,7 +788,7 @@ export class LabScene extends Phaser.Scene {
       layout.inventory.width / Math.max(1, Math.min(2, owned.length)),
     );
     owned.slice(0, 4).forEach((item, index) => {
-      const def = definitionFor(item.definitionId)!;
+      const def = runEngine.definitionFor(item.definitionId)!;
       const column = layout.inventory.height < 80 ? index : index % 2;
       const row = layout.inventory.height < 80 ? 0 : Math.floor(index / 2);
       const x = layout.inventory.x + 6 + column * rowWidth;
@@ -814,10 +850,11 @@ export class LabScene extends Phaser.Scene {
         type: "use-consumable",
         instanceId: consumable.instanceId,
       });
-      this.feedback = `Used ${definitionFor(consumable.definitionId)?.name}`;
+      this.feedback = `Used ${runEngine.definitionFor(consumable.definitionId)?.name}`;
     }
     this.dispatch({ type: "start-encounter" });
     if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
+    else this.initialiseGrid();
     this.selection = initialSelection();
     this.inputLocked = false;
     this.render();

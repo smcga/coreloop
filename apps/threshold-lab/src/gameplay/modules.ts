@@ -1,5 +1,6 @@
 import {
   createGameplayModuleRegistry,
+  createRandom,
   randomInteger,
   type EncounterReport,
   type GameplayModule,
@@ -23,6 +24,7 @@ export interface CombinationGridState {
   readonly objects: readonly GridObject[];
   readonly selectedIds: readonly string[];
   readonly selectionLimit: number;
+  readonly ruleIds: readonly string[];
   readonly complete: boolean;
 }
 export type CombinationGridAction =
@@ -51,8 +53,11 @@ const gridReport = (
     {},
   );
   const matching = Math.max(0, ...Object.values(tagCounts)) >= 3;
-  const score =
+  const positiveScore =
     base + (pair ? 10 : 0) + (sequence ? 15 : 0) + (matching ? 12 : 0);
+  const score = state.ruleIds.includes("threshold-lab:cyan-penalty")
+    ? positiveScore - (tagCounts.cyan ?? 0) * 5
+    : positiveScore;
   const tags = [
     "action-completed",
     ...(pair ? ["pair"] : []),
@@ -93,7 +98,7 @@ export const combinationGridModule: GameplayModule<
     "attachments",
   ],
   createEncounter(context) {
-    let rng = context.rng;
+    let rng = createRandom(context.seed);
     const tags = ["cyan", "amber", "violet"] as const;
     const objects: GridObject[] = [];
     for (let index = 0; index < 12; index++) {
@@ -108,11 +113,15 @@ export const combinationGridModule: GameplayModule<
       });
     }
     return {
-      rng,
       state: {
         objects,
         selectedIds: [],
-        selectionLimit: context.specialRuleId === "grid:reduced-limit" ? 4 : 5,
+        selectionLimit: context.rules.some(
+          (rule) => rule.id === "threshold-lab:reduced-selection",
+        )
+          ? 4
+          : 5,
+        ruleIds: context.rules.map((rule) => rule.id),
         complete: false,
       },
     };
@@ -262,21 +271,28 @@ export const timingMeterModule: GameplayModule<
     "early-late",
   ],
   createEncounter(context) {
-    let rng = context.rng;
+    let rng = createRandom(context.seed);
     const speed = randomInteger(rng, 7, 11);
     rng = speed.state;
     const direction = randomInteger(rng, 0, 1);
     rng = direction.state;
-    const narrow = context.specialRuleId === "timing:narrow-zones";
-    const fewer = context.specialRuleId === "timing:fewer-attempts";
+    const narrow = context.rules.some(
+      (rule) => rule.id === "threshold-lab:narrow-zones",
+    );
+    const fewer = context.rules.some(
+      (rule) => rule.id === "threshold-lab:fewer-attempts",
+    );
     return {
-      rng,
       state: {
         attempts: [],
         attemptCount: fewer ? 3 : 4,
         speedTicks:
           speed.value +
-          (context.specialRuleId === "timing:faster-marker" ? 4 : 0),
+          (context.rules.some(
+            (rule) => rule.id === "threshold-lab:faster-marker",
+          )
+            ? 4
+            : 0),
         initialDirection: direction.value ? 1 : -1,
         perfectWidth: narrow ? 60 : 100,
         currentStreak: 0,

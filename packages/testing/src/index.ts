@@ -35,8 +35,10 @@ export function runGameplayModuleScenario<TState, TAction>(options: {
         encounterId: brief.id,
         encounterNumber: brief.number,
         target: brief.target,
-        specialRuleId: options.specialRuleFor?.(brief.number) ?? null,
-        rng: state.rng,
+        rules: options.specialRuleFor?.(brief.number)
+          ? [{ id: options.specialRuleFor(brief.number)!, version: 1 }]
+          : brief.rules,
+        seed: brief.moduleSeed,
       });
       let gameplay = creation.state;
       for (const action of options.actions(gameplay)) {

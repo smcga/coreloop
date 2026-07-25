@@ -196,11 +196,7 @@ ModifierInstance
 
 This distinction supports duplication, scaling values, attachments, transformation and save compatibility.
 
-The first release may use typed handlers for its small content set. The generic trigger/effect representation arrives in Phase 2.
-
 ## 0.1 inventory, shops, and effects
-
-The starting loadout grants 10 currency, four passive slots, two consumable slots, and one Score Pulse. Definitions are immutable shared content; an owned instance contains only a stable `instanceId`, a definition reference, disabled state, and numeric stored values. Selling and consuming remove the instance atomically.
 
 Shops are generated as three unique offers by weighted selection through the run RNG. Offer and instance counters are stored in the run, so IDs remain stable across saving. A legal reroll spends its displayed price, generates all offers as one transition, and raises the next price by two. Rejected purchases and rerolls return the original state object and do not advance RNG or spend currency.
 
@@ -213,11 +209,7 @@ The deliberately small typed dispatcher resolves 0.1 effects in this documented 
 5. special-encounter penalty;
 6. final score and post-result currency effects.
 
-Each applied effect creates a structured score line and/or trigger event. Sequence Learner updates its owned instance after a sequence; that stored value survives subsequent encounters and saves. This explicit dispatcher is not the generic trigger/effect language planned for 0.2. To add temporary 0.1 content, add a typed definition and `EffectType`, then handle it in the appropriate ordered stage (or pre-encounter consumable branch) and cover the transition with a headless test.
-
 Consumables may be used only during `encounter-ready`. A successful use applies its encounter-local field or deterministic tile refresh and removes the instance; rejection leaves it untouched. Encounter-local effects disappear when the next brief is prepared.
-
-Special scheduling lives solely in `specialRuleForEncounter`: round three reduces the selection limit and round six penalises selected cyan tiles. Rules are part of the prepared brief, are announced when play begins, participate after modifiers in scoring, and disappear when the encounter is replaced.
 
 ## Browser persistence boundary
 
@@ -279,3 +271,9 @@ If there is no current consumer, defer the abstraction.
 ## 0.2 effect pipeline
 
 The bespoke 0.1 score dispatcher has been replaced by the typed deterministic trigger/effect runtime documented in [`effects.md`](effects.md). The latest encounter’s structured ledger is authoritative for score presentation.
+
+## Current encounter boundary
+
+`EncounterBrief` is framework-only: ID, ordinal, target, `RuleReference[]`, and `moduleSeed`. Core advances the run RNG once to derive that seed; a module starts a private deterministic generator from it. Module creation cannot mutate the run RNG, and rejected module actions never reach core. The opaque `GameplaySessionState` envelope records module ID/version, encounter ID, and validated JSON. Core stores that envelope but never reads `data`.
+
+Concrete rules are scheduled by application composition. Core persists and announces references; the selected module interprets mechanic rules, generic policies/effects interpret run-level rules, and the application owns prose. `createRunEngine` receives immutable definitions and scheduling/reward hooks without a global registry.

@@ -2,11 +2,11 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 4;
+export const SAVE_FORMAT_VERSION = 5;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
-  packId: "threshold-lab:default",
-  packVersion: CONTENT_VERSION,
+  packId: "core:unspecified",
+  packVersion: 1,
 } as const;
 export const DEFAULT_GAMEPLAY_VERSION = 1;
 export const RNG_VERSION = "mulberry32:1";
@@ -182,7 +182,7 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
         ...old,
         formatVersion: 3,
         gameplay: {
-          moduleId: run.gameplayModuleId ?? "threshold-lab:combination-grid",
+          moduleId: run.gameplayModuleId,
           moduleVersion: run.gameplaySession?.moduleVersion ?? 1,
         },
       };
@@ -198,6 +198,18 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
       customEffects: [],
       rngVersion: RNG_VERSION,
     }),
+  })
+  .register({
+    fromVersion: 4,
+    toVersion: 5,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      return {
+        ...old,
+        formatVersion: 5,
+        run: { ...run, encounterEffects: run.encounterEffects ?? [] },
+      };
+    },
   });
 
 export function loadSaveFile(
@@ -281,6 +293,7 @@ function validateSave(
     minimum: 0,
     maximum: 0xffffffff,
   });
+  if (!Array.isArray(value.run.encounterEffects)) bad("run.encounterEffects");
   for (const path of [
     "currency",
     "encounterNumber",

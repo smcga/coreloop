@@ -1,4 +1,3 @@
-import { createRandom } from "@core-loop/core";
 import { describe, expect, it } from "vitest";
 import { choiceModule } from "../src/gameplay";
 describe("starter module", () => {
@@ -7,8 +6,8 @@ describe("starter module", () => {
       encounterId: "1",
       encounterNumber: 1,
       target: 1,
-      specialRuleId: null,
-      rng: createRandom(42),
+      rules: [],
+      seed: 42,
     };
     const a = choiceModule.createEncounter(context),
       b = choiceModule.createEncounter(context);

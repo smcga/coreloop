@@ -1,4 +1,8 @@
-import { randomInteger, type GameplayModule } from "@core-loop/core";
+import {
+  createRandom,
+  randomInteger,
+  type GameplayModule,
+} from "@core-loop/core";
 export interface GardenState {
   readonly plants: readonly {
     growth: number;
@@ -15,7 +19,7 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
   description: "Plant a resilient two-crop arrangement.",
   capabilities: ["garden-loop:plants"],
   createEncounter(context) {
-    let rng = context.rng;
+    let rng = createRandom(context.seed);
     const plants = [];
     for (let i = 0; i < 3; i++) {
       const g = randomInteger(rng, 2, 9);
@@ -26,7 +30,7 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
       rng = r.state;
       plants.push({ growth: g.value, water: w.value, resilience: r.value });
     }
-    return { state: { plants, planted: [] }, rng };
+    return { state: { plants, planted: [] } };
   },
   handleAction(state, action) {
     if (

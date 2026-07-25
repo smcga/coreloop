@@ -1,4 +1,8 @@
-import { randomInteger, type GameplayModule } from "@core-loop/core";
+import {
+  createRandom,
+  randomInteger,
+  type GameplayModule,
+} from "@core-loop/core";
 export interface ChoiceState {
   readonly options: readonly number[];
   readonly choices: readonly number[];
@@ -11,14 +15,14 @@ export const choiceModule: GameplayModule<ChoiceState, ChoiceAction> = {
   description: "Choose three generated values.",
   capabilities: ["starter:choice"],
   createEncounter(context) {
-    let rng = context.rng;
+    let rng = createRandom(context.seed);
     const options: number[] = [];
     for (let i = 0; i < 3; i++) {
       const result = randomInteger(rng, 1, 10);
       rng = result.state;
       options.push(result.value);
     }
-    return { state: { options, choices: [] }, rng };
+    return { state: { options, choices: [] } };
   },
   handleAction(state, action) {
     if (

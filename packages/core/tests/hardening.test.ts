@@ -5,6 +5,7 @@ import {
   FrameworkError,
   PolicyRegistry,
   SaveMigrationRegistry,
+  SAVE_FORMAT_VERSION,
   canonicalJson,
   createInitialRunState,
   createReplay,
@@ -95,7 +96,7 @@ describe("versioned save migrations", () => {
     "migrates textual fixture %s without changing deterministic state",
     (name) => {
       const loaded = loadSaveFile(fixture(name), compatibility);
-      expect(loaded.save.formatVersion).toBe(4);
+      expect(loaded.save.formatVersion).toBe(SAVE_FORMAT_VERSION);
       expect(loaded.save.run.rng).toEqual({
         algorithm: "mulberry32",
         value: 0,
@@ -158,7 +159,11 @@ describe("versioned save migrations", () => {
 
 describe("deterministic replay", () => {
   const commands: RunCommand[] = [
-    { type: "start-run", seed: 42 },
+    {
+      type: "start-run",
+      seed: 42,
+      gameplayModuleId: "threshold-lab:combination-grid",
+    },
     { type: "start-encounter" },
   ];
   const execute = (inputs = commands) => {

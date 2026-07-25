@@ -1,8 +1,9 @@
 import {
-  createInitialRunState,
-  definitionFor,
-  handle,
-  ITEM_DEFINITIONS,
+  thresholdLabEngineDefinitions,
+  thresholdLabRunConfiguration,
+} from "@core-loop/content";
+import {
+  createRunEngine,
   type GameplayModule,
   type RunEvent,
   type RunState,
@@ -90,6 +91,8 @@ type MutableContent = {
   currencyContribution: number;
   acquiredAt: number[];
 };
+const runEngine = createRunEngine(thresholdLabRunConfiguration);
+
 export const defaultSimulationRequest: SimulationRequest = {
   contentPackId: "threshold-lab",
   gameplayModuleId: COMBINATION_GRID_ID,
@@ -140,7 +143,7 @@ export function runSimulation(
     specialFailures: 0,
   }));
   const content = new Map<string, MutableContent>(
-    ITEM_DEFINITIONS.map((item) => [
+    thresholdLabEngineDefinitions.map((item) => [
       item.id,
       {
         eligible: 0,
@@ -170,16 +173,16 @@ export function runSimulation(
     outliers: { seed: number; score: number; currency: number }[] = [];
   for (let offset = 0; offset < request.runCount; offset++) {
     const seed = request.seedStart + offset;
-    let state = handle(createInitialRunState(), {
+    let state = runEngine.handle(runEngine.createInitialState(), {
       type: "start-run",
       seed,
       gameplayModuleId: module.id,
     }).state;
     let commands = 1,
       runScore = 0;
-    const apply = (command: Parameters<typeof handle>[1]) => {
+    const apply = (command: Parameters<typeof runEngine.handle>[1]) => {
       const before = state;
-      const result = handle(state, command);
+      const result = runEngine.handle(state, command);
       state = result.state;
       commands++;
       record(result.events, before);
@@ -234,8 +237,8 @@ export function runSimulation(
             encounterId: brief.id,
             encounterNumber: brief.number,
             target: brief.target,
-            specialRuleId: brief.specialRule,
-            rng: state.rng,
+            rules: brief.rules,
+            seed: brief.moduleSeed,
           });
           let moduleState: object = created.state;
           const actions =
@@ -275,10 +278,10 @@ export function runSimulation(
           row.scores.push(final);
           row.targets.push(brief.target);
           runScore += final;
-          row.specials += Number(brief.specialRule !== null);
+          row.specials += Number(brief.rules.length > 0);
           const won = events.some((event) => event.type === "encounter-won");
           row.wins += Number(won);
-          row.specialFailures += Number(!won && brief.specialRule !== null);
+          row.specialFailures += Number(!won && brief.rules.length > 0);
           for (const entry of state.scoreLedger)
             if (
               entry.source.definitionId &&
@@ -371,7 +374,7 @@ export function runSimulation(
           : m.purchased === 0
             ? [{ type: "offered-never-purchased", id: m.definitionId }]
             : m.triggered === 0 &&
-                definitionFor(m.definitionId)?.category === "modifier"
+                runEngine.definitionFor(m.definitionId)?.category === "modifier"
               ? [{ type: "purchased-never-triggered", id: m.definitionId }]
               : [],
     )
