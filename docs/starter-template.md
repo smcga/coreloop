@@ -1,0 +1,7 @@
+# Reusable starter and Garden Loop
+
+`apps/new-game-template` consumes `@core-loop/core`, `@core-loop/content` and `@core-loop/phaser` as workspace dependencies. Its `starter:three-choice` module deterministically generates three options and emits `starter:value-chosen`; its tiny catalogue names the teaching modifiers, consumables, attachment, special rules, loadouts, reward and shop pool. `starter:bank-last-choice` represents a namespaced custom effect and `starter:short-schedule` an external policy: these are custom because banking module-local choice history and shortening the teaching schedule are application decisions rather than universal core operations.
+
+The app provides a responsive six-encounter flow, target result, shop teaching screen, local text save, strict TypeScript tests and independent production build. It intentionally contains no Threshold Lab imports or copied framework implementation.
+
+`apps/garden-loop` is the third-theme proof. It has a distinct planting-arrangement module: choose two plants with growth, water and resilience; water diversity adds harvest rather than disguising pair/sequence scoring. Its season has growing sessions, bad weather, helpers, supplies, traits, a garden centre, compost and harvest goals. Its separate catalogue contains ten helpers, four supplies, five plants, three traits, three weather rules and two approaches. It consumes workspace packages and changes no core code.

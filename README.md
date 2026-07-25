@@ -78,6 +78,8 @@ The headless framework packages must not depend on Phaser, the DOM or browser st
 
 ## Documentation
 
+Start with the [`documentation index`](docs/getting-started.md), or create a text-only starter with `npm run create-game -- my-game`. Threshold Lab is a production PWA; the maintained starter and Garden Loop build independently with `npm run build:all`.
+
 - [`AGENTS.md`](AGENTS.md) — instructions and constraints for coding agents
 - [`docs/architecture.md`](docs/architecture.md) — boundaries and core design
 - [`docs/threshold-lab.md`](docs/threshold-lab.md) — playable test-bed specification

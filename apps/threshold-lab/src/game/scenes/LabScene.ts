@@ -53,7 +53,7 @@ export class LabScene extends Phaser.Scene {
     super("lab");
   }
 
-  create(data: { run?: RunState; moduleId?: string }): void {
+  create(data: { run?: RunState; moduleId?: string; seed?: number }): void {
     if (data.run) {
       this.run = data.run;
       this.feedback = "Saved run resumed";
@@ -69,7 +69,7 @@ export class LabScene extends Phaser.Scene {
         this.markerPosition = this.timing.initialDirection === 1 ? 0 : 1000;
         this.markerDirection = this.timing.initialDirection;
       }
-    } else this.startNewRun(data.moduleId ?? COMBINATION_GRID_ID);
+    } else this.startNewRun(data.moduleId ?? COMBINATION_GRID_ID, data.seed);
     this.scale.on("resize", this.render, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
       this.scale.off("resize", this.render, this),
@@ -119,8 +119,11 @@ export class LabScene extends Phaser.Scene {
     return result.events;
   }
 
-  private startNewRun(moduleId = this.run.gameplayModuleId): void {
-    const seed = Date.now() >>> 0;
+  private startNewRun(
+    moduleId = this.run.gameplayModuleId,
+    requestedSeed?: number,
+  ): void {
+    const seed = requestedSeed ?? Date.now() >>> 0;
     this.run = createInitialRunState();
     this.log = [];
     this.dispatch({ type: "start-run", seed, gameplayModuleId: moduleId });
