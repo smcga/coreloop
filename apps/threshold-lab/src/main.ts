@@ -1,5 +1,10 @@
 import Phaser from "phaser";
 import { responsiveScale } from "@core-loop/phaser";
+import {
+  BrowserAudioActivation,
+  registerProductionServiceWorker,
+} from "@core-loop/phaser";
+import { registerSW } from "virtual:pwa-register";
 import { BootScene } from "./game/scenes/BootScene";
 import { LabScene } from "./game/scenes/LabScene";
 import { MenuScene } from "./game/scenes/MenuScene";
@@ -9,6 +14,51 @@ import {
   definitionDetail,
   developmentToolsEnabled,
 } from "./devtools";
+
+const pwaStatus = document.createElement("div");
+pwaStatus.className = "pwa-status";
+pwaStatus.setAttribute("role", "status");
+pwaStatus.textContent = "Loading";
+document.body.append(pwaStatus);
+const audio = new BrowserAudioActivation();
+document.addEventListener("pointerdown", () => void audio.activate(), {
+  once: true,
+});
+void registerProductionServiceWorker(
+  import.meta.env.PROD,
+  async () => {
+    let update: (reload?: boolean) => Promise<void> = async () => {};
+    update = registerSW({
+      immediate: true,
+      onOfflineReady: () => {
+        pwaStatus.textContent = "Ready for offline use";
+      },
+      onNeedRefresh: () => {
+        pwaStatus.replaceChildren("Update available · ");
+        const button = document.createElement("button");
+        button.textContent = "Save and reload";
+        button.onclick = () => void update(true);
+        pwaStatus.append(button);
+      },
+      onRegisterError: () => {
+        pwaStatus.textContent =
+          "Offline setup failed; online play remains available";
+      },
+    });
+    return { updateServiceWorker: update };
+  },
+  ({ state }) => {
+    if (state === "unsupported") pwaStatus.remove();
+    else
+      pwaStatus.textContent =
+        state === "preparing"
+          ? "Preparing offline cache…"
+          : state.replaceAll("-", " ");
+  },
+);
+window.addEventListener("offline", () => {
+  pwaStatus.textContent = "Offline · packaged play remains available";
+});
 
 if (developmentToolsEnabled(import.meta.env.DEV, location.search)) {
   const panel = document.createElement("aside");

@@ -1,0 +1,16 @@
+{
+  "name": "@core-loop/garden-loop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@core-loop/core": "0.1.0",
+    "@core-loop/content": "0.1.0",
+    "@core-loop/phaser": "0.1.0",
+    "phaser": "^3.90.0"
+  }
+}

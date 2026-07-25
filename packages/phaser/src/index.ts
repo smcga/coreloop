@@ -5,3 +5,7 @@ export const responsiveScale: Phaser.Types.Core.ScaleConfig = {
   mode: Phaser.Scale.RESIZE,
   autoCenter: Phaser.Scale.CENTER_BOTH,
 };
+
+export * from "./audio";
+export * from "./seed-url";
+export * from "./service-worker";
