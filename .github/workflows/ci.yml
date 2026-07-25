@@ -14,4 +14,10 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - run: npm run content:validate
+      - run: npm run saves:validate
+      - run: npm run replay:verify
+      - run: npm run simulate:smoke
+      - run: npm run docs:check
+      - run: npm run check:no-binaries
+      - run: npm run build:all

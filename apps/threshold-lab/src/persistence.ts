@@ -16,6 +16,7 @@ export interface StorageLike {
 }
 export const SAVE_KEY = "coreloop.threshold-lab.run.v1";
 export const REPLAY_KEY = "coreloop.threshold-lab.replay.v1";
+export const MAX_IMPORT_CHARACTERS = 1_000_000;
 export class RunSaveStore {
   constructor(private readonly storage: StorageLike) {}
   load(): SaveFile | null {
@@ -33,6 +34,8 @@ export class RunSaveStore {
     return save ? JSON.stringify(save, null, 2) : null;
   }
   importText(text: string): { readonly migratedFrom: number | null } {
+    if (text.length > MAX_IMPORT_CHARACTERS)
+      throw new Error("Save exceeds the 1 MB text limit");
     const loaded = loadSaveFile(text);
     this.storage.setItem(SAVE_KEY, JSON.stringify(loaded.save));
     return { migratedFrom: loaded.migratedFrom };

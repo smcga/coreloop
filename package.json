@@ -22,7 +22,11 @@
     "saves:validate": "vitest run packages/core/tests/hardening.test.ts -t \"versioned save migrations\"",
     "replay:verify": "vitest run packages/core/tests/hardening.test.ts -t \"deterministic replay\"",
     "simulate": "vite-node tools/simulate.ts",
-    "simulate:smoke": "vitest run packages/simulation/tests/simulation.test.ts -t \"CI smoke\""
+    "simulate:smoke": "vitest run packages/simulation/tests/simulation.test.ts -t \"CI smoke\"",
+    "build:all": "npm run build --workspaces --if-present",
+    "check:no-binaries": "node tools/check-no-binaries.mjs",
+    "docs:check": "node tools/check-doc-links.mjs",
+    "create-game": "node tools/create-game.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -33,6 +37,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^7.0.6",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^3.2.4"
   }
 }

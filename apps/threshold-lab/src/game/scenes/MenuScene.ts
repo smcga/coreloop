@@ -5,6 +5,7 @@ import { terminology, toggleTerminology } from "../../terminology";
 import { computeMenuLayout, type Rect } from "../ui/Layout";
 import { ui } from "../ui/UiTokens";
 import { COMBINATION_GRID_ID, TIMING_METER_ID } from "../../gameplay/modules";
+import { createSeedLink, parseSeedLink } from "@core-loop/phaser";
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -23,7 +24,52 @@ export class MenuScene extends Phaser.Scene {
     const terms = terminology().terms;
     const store = new RunSaveStore(localStorage);
     const saved = store.load();
+    const shared = parseSeedLink(
+      location.href,
+      new Set([COMBINATION_GRID_ID, TIMING_METER_ID]),
+      new Set([
+        "threshold-lab:starter-balanced",
+        "threshold-lab:starter-high-risk",
+        "threshold-lab:starter-scaling",
+        "threshold-lab:starter-attachments",
+      ]),
+    );
     const actions = [
+      ...(shared?.ok
+        ? [
+            {
+              label: `Start shared run · seed ${shared.selection.seed}`,
+              action: () => {
+                if (
+                  saved &&
+                  !window.confirm(
+                    "Replace the active saved run with this shared run?",
+                  )
+                )
+                  return;
+                this.scene.start("lab", {
+                  moduleId: shared.selection.moduleId,
+                  seed: shared.selection.seed,
+                });
+              },
+            },
+            {
+              label: "Copy Seed Link",
+              action: () =>
+                void navigator.clipboard.writeText(
+                  createSeedLink(location.href, shared.selection),
+                ),
+            },
+          ]
+        : []),
+      ...(shared && !shared.ok
+        ? [
+            {
+              label: `Invalid seed link · ${shared.reason}`,
+              action: () => history.replaceState(null, "", location.pathname),
+            },
+          ]
+        : []),
       ...(saved
         ? [
             {
