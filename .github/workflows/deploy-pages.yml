@@ -31,10 +31,15 @@ jobs:
       - run: npm run simulate:smoke
       - run: npm run docs:check
       - run: npm run check:no-binaries
-      - run: npm run build
+      - name: Build Threshold Lab
+        run: npm run build --workspace @core-loop/threshold-lab
+      - name: Build Garden Loop
+        run: npm run build --workspace @core-loop/garden-loop
+      - name: Assemble Pages artifact
+        run: node tools/assemble-pages.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
-        with: { path: apps/threshold-lab/dist }
+        with: { path: pages-dist }
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
