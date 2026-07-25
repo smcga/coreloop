@@ -185,3 +185,7 @@ Release tags should represent the playable definitions of done in the tracker is
 ## Save verification
 
 For the 0.1 build, refresh in both an open shop and before a special encounter. Continue from the menu and confirm the phase, offers, inventory, active rule, and next reroll remain unchanged. Autosaves occur after successful framework transitions, never while a command is resolving; use Delete Save or Abandon to exercise removal.
+
+## Workspace lockfile discipline
+
+After adding, renaming or removing an npm workspace, run `npm install --package-lock-only` and verify `npm ci` from the repository root. The workspace-lock regression test ensures every app and package with a `package.json` has a corresponding lockfile entry, matching CI's clean-install behaviour.
