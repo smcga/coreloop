@@ -10,6 +10,6 @@ The only icon is readable UTF-8 SVG with maskable padding. Some platforms—nota
 
 ## Deploy
 
-`deploy-pages.yml` runs the lockfile install and complete validation suite on `main`, uploads only `apps/threshold-lab/dist`, and uses supported Pages permissions. Configure another app's Vite `base`, build its workspace, upload only its `dist`, and keep production source maps disabled unless deliberately reviewed. Pull requests validate but never deploy production.
+`deploy-pages.yml` runs the lockfile install and complete validation suite on `main`, then builds both playable apps. `tools/assemble-pages.mjs` creates one clean `pages-dist` artifact with Threshold Lab at the site root and Garden Loop at `/coreloop/garden/`; the workflow uploads that combined directory with supported Pages permissions. Keep each app's Vite `base` aligned with its deployment path and keep production source maps disabled unless deliberately reviewed. Pull requests validate but never deploy production.
 
 After one online load reports ready, test reopening offline, both modules, an existing save, shops and completion. Installation and service-worker lifecycle require a supported secure browser; localhost is treated as secure for testing.
