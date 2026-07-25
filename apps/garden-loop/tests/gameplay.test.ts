@@ -1,4 +1,3 @@
-import { createRandom } from "@core-loop/core";
 import { describe, expect, it } from "vitest";
 import { gardenModule } from "../src/gameplay";
 describe("garden module", () => {
@@ -7,8 +6,8 @@ describe("garden module", () => {
       encounterId: "1",
       encounterNumber: 1,
       target: 1,
-      specialRuleId: null,
-      rng: createRandom(9),
+      rules: [],
+      seed: 9,
     };
     const a = gardenModule.createEncounter(context);
     expect(a).toEqual(gardenModule.createEncounter(context));

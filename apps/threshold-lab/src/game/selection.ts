@@ -1,8 +1,14 @@
-import type {
-  EncounterBrief,
-  EncounterReport,
-  PlayableTile,
-} from "@core-loop/core";
+import type { EncounterReport } from "@core-loop/core";
+
+export interface PlayableObject {
+  readonly id: string;
+  readonly value: number;
+  readonly tags: readonly string[];
+}
+export interface SelectionEncounter {
+  readonly id: string;
+  readonly objects: readonly PlayableObject[];
+}
 
 export interface SelectionState {
   readonly selected: ReadonlySet<string>;
@@ -20,25 +26,27 @@ export function initialSelection(): SelectionState {
   return { selected: new Set() };
 }
 
-export function toggleTile(
+export function toggleObject(
   state: SelectionState,
-  tileId: string,
+  objectId: string,
   limit: number,
 ): SelectionState {
   const selected = new Set(state.selected);
-  if (selected.has(tileId)) selected.delete(tileId);
-  else if (selected.size < limit) selected.add(tileId);
+  if (selected.has(objectId)) selected.delete(objectId);
+  else if (selected.size < limit) selected.add(objectId);
   else return state;
   return { selected };
 }
 
-export function calculateScore(tiles: readonly PlayableTile[]): ScoreBreakdown {
-  const base = tiles.reduce((sum, tile) => sum + tile.value, 0);
+export function calculateScore(
+  objects: readonly PlayableObject[],
+): ScoreBreakdown {
+  const base = objects.reduce((sum, object) => sum + object.value, 0);
   const values = new Map<number, number>();
   const tags = new Map<string, number>();
-  for (const tile of tiles) {
-    values.set(tile.value, (values.get(tile.value) ?? 0) + 1);
-    for (const tag of tile.tags) tags.set(tag, (tags.get(tag) ?? 0) + 1);
+  for (const object of objects) {
+    values.set(object.value, (values.get(object.value) ?? 0) + 1);
+    for (const tag of object.tags) tags.set(tag, (tags.get(tag) ?? 0) + 1);
   }
   const pairBonus = [...values.values()].some((count) => count >= 2) ? 8 : 0;
   const unique = [...values.keys()].sort((a, b) => a - b);
@@ -61,21 +69,21 @@ export function calculateScore(tiles: readonly PlayableTile[]): ScoreBreakdown {
   };
 }
 
-export function selectedTiles(
-  brief: EncounterBrief,
+export function selectedObjects(
+  encounter: SelectionEncounter,
   state: SelectionState,
-): readonly PlayableTile[] {
-  return brief.tiles.filter((tile) => state.selected.has(tile.id));
+): readonly PlayableObject[] {
+  return encounter.objects.filter((object) => state.selected.has(object.id));
 }
 
 export function createEncounterReport(
-  brief: EncounterBrief,
+  encounter: SelectionEncounter,
   state: SelectionState,
 ): EncounterReport {
-  const chosen = selectedTiles(brief, state);
+  const chosen = selectedObjects(encounter, state);
   const score = calculateScore(chosen);
   return {
-    encounterId: brief.id,
+    encounterId: encounter.id,
     score: score.total,
     tags: [
       ...(score.pairBonus ? ["pair"] : []),
@@ -88,9 +96,9 @@ export function createEncounterReport(
       sequenceBonus: score.sequenceBonus,
       matchingTagBonus: score.matchingTagBonus,
       firstValue: chosen[0]?.value ?? 0,
-      cyan: chosen.filter((tile) => tile.tags.includes("cyan")).length,
-      amber: chosen.filter((tile) => tile.tags.includes("amber")).length,
-      violet: chosen.filter((tile) => tile.tags.includes("violet")).length,
+      cyan: chosen.filter((object) => object.tags.includes("cyan")).length,
+      amber: chosen.filter((object) => object.tags.includes("amber")).length,
+      violet: chosen.filter((object) => object.tags.includes("violet")).length,
     },
     signals: [],
   };

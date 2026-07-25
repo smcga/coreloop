@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { EncounterBrief, PlayableTile } from "@core-loop/core";
+import type { PlayableObject } from "../src/game/selection";
 import {
   calculateScore,
   createEncounterReport,
   initialSelection,
-  toggleTile,
+  toggleObject,
 } from "../src/game/selection";
 
-const tiles: readonly PlayableTile[] = [
+const tiles: readonly PlayableObject[] = [
   { id: "a", value: 2, tags: ["cyan"] },
   { id: "b", value: 2, tags: ["cyan"] },
   { id: "c", value: 3, tags: ["cyan"] },
@@ -30,17 +30,9 @@ describe("Threshold Lab scoring", () => {
     expect(calculateScore(tiles.slice(0, 3)).matchingTagBonus).toBe(10);
   });
   it("creates the same report from the same encounter and selections", () => {
-    const brief: EncounterBrief = {
-      id: "encounter-1",
-      number: 1,
-      target: 30,
-      selectionLimit: 5,
-      specialRule: null,
-      temporaryScoreBonus: 0,
-      tiles,
-    };
+    const brief = { id: "encounter-1", objects: tiles };
     let selection = initialSelection();
-    for (const tile of tiles) selection = toggleTile(selection, tile.id, 5);
+    for (const tile of tiles) selection = toggleObject(selection, tile.id, 5);
     expect(createEncounterReport(brief, selection)).toEqual(
       createEncounterReport(brief, selection),
     );

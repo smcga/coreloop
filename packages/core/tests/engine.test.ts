@@ -9,6 +9,7 @@ import {
   type RunState,
 } from "../src/index";
 
+const MODULE = "test:first";
 function report(state: RunState, score: number): EncounterReport {
   return {
     encounterId: state.currentEncounter!.id,
@@ -19,7 +20,23 @@ function report(state: RunState, score: number): EncounterReport {
   };
 }
 function start(seed = 123): RunState {
-  return handle(createInitialRunState(), { type: "start-run", seed }).state;
+  return handle(createInitialRunState(), {
+    type: "start-run",
+    seed,
+    gameplayModuleId: MODULE,
+  }).state;
+}
+function activate(state: RunState): RunState {
+  const stored = handle(state, {
+    type: "store-gameplay-session",
+    session: {
+      moduleId: MODULE,
+      moduleVersion: 1,
+      encounterId: state.currentEncounter!.id,
+      data: { complete: true },
+    },
+  }).state;
+  return handle(stored, { type: "start-encounter" }).state;
 }
 
 describe("Mulberry32", () => {
@@ -37,76 +54,64 @@ describe("Mulberry32", () => {
   });
 });
 
-describe("run engine", () => {
-  it("starts a seeded run and encounter with ordered events", () => {
-    const started = handle(createInitialRunState(), {
-      type: "start-run",
-      seed: 42,
-    });
-    expect(started.state.phase).toBe("encounter-ready");
-    expect(started.events.map((event) => event.type)).toEqual([
-      "run-started",
-      "encounter-prepared",
-    ]);
-    const active = handle(started.state, { type: "start-encounter" });
-    expect(active.state.phase).toBe("encounter-active");
-    expect(active.events[0]?.type).toBe("encounter-started");
-  });
-  it("replays identically and allows seeds to differ", () => {
-    expect(start(99)).toEqual(start(99));
-    expect(start(99).currentEncounter?.tiles).not.toEqual(
-      start(100).currentEncounter?.tiles,
+describe("generic run engine", () => {
+  it("derives one deterministic module seed without creating gameplay state", () => {
+    const a = start(99),
+      b = start(99),
+      c = start(100);
+    expect(a).toEqual(b);
+    expect(a.currentEncounter?.moduleSeed).not.toBe(
+      c.currentEncounter?.moduleSeed,
     );
-  });
-  it("loses immediately below target", () => {
-    const active = handle(start(), { type: "start-encounter" }).state;
-    const result = handle(active, {
-      type: "submit-encounter",
-      report: report(active, active.currentEncounter!.target - 1),
+    expect(a.currentEncounter).toEqual({
+      id: "encounter-1",
+      number: 1,
+      target: 29,
+      rules: [],
+      moduleSeed: a.currentEncounter!.moduleSeed,
     });
-    expect(result.state.phase).toBe("run-failed");
-    expect(result.events.map((event) => event.type)).toEqual([
-      "encounter-lost",
-      "run-failed",
-    ]);
   });
-  it("wins at target, awards currency, and completes all six", () => {
+  it("requires module-owned state before accepting a report", () => {
+    const activeWithoutSession = handle(start(), {
+      type: "start-encounter",
+    }).state;
+    const rejected = handle(activeWithoutSession, {
+      type: "submit-encounter",
+      report: report(activeWithoutSession, 999),
+    });
+    expect(rejected.state).toBe(activeWithoutSession);
+    expect(rejected.events[0]).toMatchObject({ type: "command-rejected" });
+  });
+  it("completes the same lifecycle for an arbitrary module", () => {
     let state = start();
     for (let number = 1; number <= ENCOUNTER_COUNT; number += 1) {
-      state = handle(state, { type: "start-encounter" }).state;
-      const won = handle(state, {
+      state = activate(state);
+      state = handle(state, {
         type: "submit-encounter",
-        report: report(state, state.currentEncounter!.target),
-      });
-      expect(won.events.slice(0, 2).map((event) => event.type)).toEqual([
-        "encounter-won",
-        "currency-awarded",
-      ]);
-      expect(won.state.currency).toBeGreaterThan(0);
-      state = won.state;
+        report: report(state, 999),
+      }).state;
       if (number < ENCOUNTER_COUNT)
         state = handle(state, { type: "advance" }).state;
     }
     expect(state.phase).toBe("run-complete");
-    expect(state.encounterNumber).toBe(6);
   });
-  it("rejects invalid commands in important phases without changing state", () => {
-    const idle = createInitialRunState();
-    expect(handle(idle, { type: "advance" })).toMatchObject({
-      state: idle,
-      events: [{ type: "command-rejected", phase: "idle" }],
-    });
+  it("rejects invalid commands atomically without advancing RNG", () => {
     const ready = start();
-    expect(handle(ready, { type: "advance" }).events[0]?.type).toBe(
-      "command-rejected",
-    );
-    const active = handle(ready, { type: "start-encounter" }).state;
-    expect(handle(active, { type: "start-encounter" }).events[0]?.type).toBe(
-      "command-rejected",
-    );
+    expect(handle(ready, { type: "advance" }).state).toBe(ready);
+    expect(
+      handle(ready, {
+        type: "store-gameplay-session",
+        session: {
+          moduleId: "test:other",
+          moduleVersion: 1,
+          encounterId: ready.currentEncounter!.id,
+          data: null,
+        },
+      }).state,
+    ).toBe(ready);
   });
-  it("preserves the next generated encounter through JSON restoration", () => {
-    let state = handle(start(), { type: "start-encounter" }).state;
+  it("continues deterministically after JSON restoration", () => {
+    let state = activate(start());
     state = handle(state, {
       type: "submit-encounter",
       report: report(state, 999),
@@ -115,9 +120,5 @@ describe("run engine", () => {
     expect(handle(restored, { type: "advance" })).toEqual(
       handle(state, { type: "advance" }),
     );
-  });
-  it("runs under Node without browser or Phaser globals", () => {
-    expect(typeof document).toBe("undefined");
-    expect(typeof window).toBe("undefined");
   });
 });

@@ -28,7 +28,7 @@ Duplication creates a fresh deterministic ID, copies stored values/history, clea
 
 Reward containers describe three interactions: a three-item catalogue choice, fixed currency cache, and targeted attachment. A host generates outcomes with run RNG and must persist explicit choices until selected/skipped; presentation never rerolls them. Pools hold stable references and weights. Four loadouts provide balanced, economy, scaling, and attachment openings. Run upgrades model non-triggering capacity and shop changes.
 
-Saves identify content pack/version, terminology, loadout, definitions, and mutable instances by stable ID. Definition bodies stay external. Missing or incompatible pack versions must reject with a restart message rather than substitute content. General migration remains deferred.
+Saves identify content pack/version, terminology, loadout, definitions, and mutable instances by stable ID. Definition bodies stay external. Missing or incompatible pack versions must reject with a restart message rather than substitute content. Migrations preserve these identities and fail explicitly when an installed pack cannot satisfy them.
 
 ## Terminology
 
@@ -84,4 +84,8 @@ const definitions = [
 ];
 ```
 
-Add complete Lab/music terms—including the three categories above—assemble a pack, then call `new ContentRegistry(pack)`. Future games use the same explicit API. The second gameplay module, general migrations, simulation, scripting, and mod marketplace remain deferred to Issue #6 or later.
+Add complete Lab/music terms—including the three categories above—assemble a pack, then call `new ContentRegistry(pack)`. Future games use the same explicit API. Applications compose the pack with their selected gameplay module and the headless simulator exercises the same composition.
+
+## Framework composition
+
+Concrete item names, visual metadata, namespaced rule IDs, and module capability requirements belong here or in an application. `thresholdLabRunConfiguration` adapts Threshold Lab definitions to core's generic `ItemDefinition`/effect contracts. Core receives this immutable configuration through `createRunEngine`; definitions are not copied into `RunState`. A different application supplies a different configuration without editing core.

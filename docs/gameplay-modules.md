@@ -25,7 +25,7 @@ interface GameplaySessionState {
 
 The registry is the single narrowing boundary. It rejects unknown IDs, duplicate IDs, duplicate capabilities, invalid versions, invalid state, and saves whose module version differs from the installed adapter. It never silently selects a replacement. The menu can therefore offer deletion and a new-run path for an incompatible save.
 
-Issue #6 raises the content/save compatibility version to 3. Earlier envelopes have no selected module identity and are deliberately rejected rather than guessing Combination Grid; migration remains Issue #7 scope.
+Historical envelopes are handled by the explicit save migration graph. Current envelopes identify the selected module and its version; unsupported identities fail with a compatibility diagnostic.
 
 ## Actions, signals, reports, and deterministic state
 
@@ -84,3 +84,7 @@ const module: GameplayModule<{ done: boolean }, { type: "finish" }> = {
 ```
 
 Register it explicitly beside the other adapters, author capability-compatible content and rules, add a Phaser presenter, and run the generic scenario harness with a bot strategy. No core or content-package import of the implementation is required.
+
+## Generic creation contract
+
+A module receives `{ encounterId, encounterNumber, target, rules, seed }`. It owns every playable object, allowance, action, threshold, and mechanic-specific modifier in its versioned JSON state. `seed` is obtained by advancing the framework RNG exactly once. Start a module RNG from the seed; never return or independently persist a second authoritative run stream. Store the completed/updated state in `GameplaySessionState` before submitting its generic `EncounterReport`.

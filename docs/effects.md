@@ -66,4 +66,6 @@ No effect class or Phaser code is required.
 
 Cyan Focus, Pair Amplifier, Sequence Learner, First Echo, High Risk, Perfect Reward, Score Pulse, and the encounter-six cyan penalty now declare generic triggers/operations. Tile Refresh remains encounter-generation logic because replacing Threshold Lab's gameplay objects is outside the generic core effect vocabulary. The round-three allowance and High Risk's prepared selection limit remain brief preparation rules; their scoring consequences use the pipeline.
 
-The content version is 2. Existing format-version-1 envelopes remain structurally supported, but 0.1 content-version-1 saves are deliberately rejected rather than guessed or silently mutated. Threshold Lab then offers a new run/delete path. Full migrations are Issue #7 work. Definitions remain external; owned IDs, stored values, active brief state, RNG, and the bounded latest ledger are saved. Issue #5's catalogue/authoring platform and Issue #6's second gameplay module remain deferred.
+## Module-specific operations
+
+Prefer generic trigger conditions and operations. If an operation changes mechanic state, define a namespaced custom handler reference on the consumable/effect, handle it in application composition or the gameplay module, validate the returned module envelope, and commit it atomically. Core must not branch on the handler, item, module, or rule ID.

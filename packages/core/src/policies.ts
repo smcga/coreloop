@@ -1,5 +1,6 @@
 import type { RandomState } from "./random";
-import type { ItemCategory, SpecialRule } from "./engine";
+import type { ItemCategory } from "./engine";
+import type { RuleReference } from "./gameplay";
 import { FrameworkError, requireSafeNumber } from "./errors";
 
 export interface PolicyReference {
@@ -13,7 +14,7 @@ export interface EncounterSchedulePolicy extends VersionedPolicy {
     readonly rng: RandomState;
   }): readonly {
     readonly number: number;
-    readonly specialRule: SpecialRule | null;
+    readonly rules: readonly RuleReference[];
   }[];
 }
 export interface TargetPolicy extends VersionedPolicy {
@@ -126,12 +127,7 @@ export const defaultPolicies = {
     createSchedule: () =>
       Array.from({ length: 6 }, (_, index) => ({
         number: index + 1,
-        specialRule:
-          index === 2
-            ? ("reduced-limit" as const)
-            : index === 5
-              ? ("cyan-penalty" as const)
-              : null,
+        rules: [],
       })),
   },
   target: {

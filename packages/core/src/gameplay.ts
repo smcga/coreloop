@@ -1,5 +1,3 @@
-import type { RandomState } from "./random";
-
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
   JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
@@ -30,9 +28,15 @@ export interface GameplayEncounterContext {
   readonly encounterId: string;
   readonly encounterNumber: number;
   readonly target: number;
-  readonly specialRuleId: string | null;
-  readonly specialRulePayload?: JsonValue;
-  readonly rng: RandomState;
+  readonly rules: readonly RuleReference[];
+  /** A seed derived by advancing the run RNG exactly once. */
+  readonly seed: number;
+}
+
+export interface RuleReference {
+  readonly id: string;
+  readonly version: number;
+  readonly payload?: JsonValue;
 }
 
 export interface GameplayActionContext {
@@ -44,7 +48,6 @@ export type GameplayReportContext = GameplayActionContext;
 
 export interface GameplayEncounterCreation<TState> {
   readonly state: TState;
-  readonly rng: RandomState;
   readonly signals?: readonly ModuleGameplaySignal[];
 }
 

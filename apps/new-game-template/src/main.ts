@@ -1,4 +1,3 @@
-import { createRandom } from "@core-loop/core";
 import { choiceModule, type ChoiceState } from "./gameplay";
 import "./style.css";
 const root = document.querySelector<HTMLElement>("#app")!;
@@ -6,19 +5,17 @@ const params = new URLSearchParams(location.search);
 const parsed = Number(params.get("seed") ?? "1");
 const seed =
   Number.isInteger(parsed) && parsed >= 0 && parsed <= 0xffffffff ? parsed : 1;
-let rng = createRandom(seed),
-  round = 1,
+let round = 1,
   state: ChoiceState;
 function begin() {
   const made = choiceModule.createEncounter({
     encounterId: `choice-${round}`,
     encounterNumber: round,
     target: 12 + round,
-    specialRuleId: null,
-    rng,
+    rules: [],
+    seed: (seed + round) >>> 0,
   });
   state = made.state;
-  rng = made.rng;
   render();
 }
 function render() {
@@ -44,7 +41,7 @@ function render() {
           } else {
             localStorage.setItem(
               "starter.save",
-              JSON.stringify({ seed, round, rng }),
+              JSON.stringify({ seed, round }),
             );
             root.innerHTML += `<h2>Shop</h2><p>Example upgrade: +1 safety</p><button id="next">Next encounter</button>`;
             document.querySelector<HTMLButtonElement>("#next")!.onclick = begin;

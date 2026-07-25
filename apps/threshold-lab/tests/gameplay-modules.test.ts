@@ -1,5 +1,4 @@
 import {
-  createRandom,
   createGameplayModuleRegistry,
   type GameplayModule,
 } from "@core-loop/core";
@@ -17,8 +16,8 @@ const context = {
   encounterId: "encounter-1",
   encounterNumber: 1,
   target: 29,
-  specialRuleId: null,
-  rng: createRandom(1234),
+  rules: [],
+  seed: 1234,
 };
 
 describe("gameplay module registry", () => {

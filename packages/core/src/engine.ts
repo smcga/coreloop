@@ -1,26 +1,21 @@
-import { createRandom, randomInteger, type RandomState } from "./random";
+import {
+  createRandom,
+  nextUint32,
+  randomInteger,
+  type RandomState,
+} from "./random";
 import {
   resolveEffects,
   type EffectDefinition,
   type EffectTrigger,
   type ScoreLedgerEntry,
 } from "./effects";
-import type { GameplaySessionState } from "./gameplay";
+import type { GameplaySessionState, RuleReference } from "./gameplay";
 
 export const ENCOUNTER_COUNT = 6;
 export const CONTENT_VERSION = 3;
-export type Rarity = "common" | "uncommon" | "rare";
+export type Rarity = string;
 export type ItemCategory = "modifier" | "consumable";
-export type EffectType =
-  | "tagged-bonus"
-  | "pair-amplifier"
-  | "perfect-reward"
-  | "sequence-learner"
-  | "first-echo"
-  | "high-risk"
-  | "refresh-tiles"
-  | "extra-selection"
-  | "score-boost";
 
 export interface ItemDefinition {
   readonly id: string;
@@ -30,194 +25,25 @@ export interface ItemDefinition {
   readonly rarity: Rarity;
   readonly weight: number;
   readonly basePrice: number;
-  readonly effectType: EffectType;
-  readonly parameters: Readonly<Record<string, number | string>>;
   readonly triggers?: readonly EffectTrigger[];
+  readonly use?:
+    | { readonly type: "encounter-effect" }
+    | { readonly type: "custom"; readonly handler: RuleReference };
 }
-
-export const ITEM_DEFINITIONS: readonly ItemDefinition[] = Object.freeze([
-  {
-    id: "cyan-focus",
-    category: "modifier",
-    name: "Cyan Focus",
-    description: "+10 per selected cyan tile",
-    rarity: "common",
-    weight: 5,
-    basePrice: 10,
-    effectType: "tagged-bonus",
-    parameters: { tag: "cyan", amount: 10 },
-    triggers: [
-      {
-        id: "cyan-score",
-        event: "score",
-        stage: "additive",
-        operations: [
-          {
-            type: "add-score",
-            amount: { from: "metric", key: "cyan" },
-            factor: 10,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "pair-amplifier",
-    category: "modifier",
-    name: "Pair Amplifier",
-    description: "Pair bonus ×1.5",
-    rarity: "common",
-    weight: 4,
-    basePrice: 12,
-    effectType: "pair-amplifier",
-    parameters: { multiplier: 1.5 },
-    triggers: [
-      {
-        id: "amplify-pair",
-        event: "score",
-        stage: "multiplicative",
-        conditions: { type: "signal-tag", tag: "pair" },
-        operations: [{ type: "multiply-score", numerator: 3, denominator: 2 }],
-      },
-    ],
-  },
-  {
-    id: "perfect-reward",
-    category: "modifier",
-    name: "Perfect Reward",
-    description: "+5 currency when scoring 20 over target",
-    rarity: "uncommon",
-    weight: 3,
-    basePrice: 14,
-    effectType: "perfect-reward",
-    parameters: { margin: 20, currency: 5 },
-    triggers: [
-      {
-        id: "perfect-currency",
-        event: "result",
-        stage: "post-result",
-        conditions: {
-          type: "compare",
-          left: { from: "signal", key: "margin" },
-          comparator: "gte",
-          right: { from: "constant", value: 20 },
-        },
-        operations: [
-          { type: "currency", amount: { from: "constant", value: 5 } },
-        ],
-      },
-    ],
-  },
-  {
-    id: "sequence-learner",
-    category: "modifier",
-    name: "Sequence Learner",
-    description: "Sequences permanently grow a +3 bonus",
-    rarity: "uncommon",
-    weight: 3,
-    basePrice: 15,
-    effectType: "sequence-learner",
-    parameters: { growth: 3 },
-    triggers: [
-      {
-        id: "learned-score",
-        event: "score",
-        stage: "additive",
-        operations: [
-          { type: "add-score", amount: { from: "stored", key: "bonus" } },
-        ],
-      },
-      {
-        id: "learn-sequence",
-        event: "score",
-        stage: "post-result",
-        conditions: { type: "signal-tag", tag: "sequence" },
-        operations: [
-          {
-            type: "stored-value",
-            key: "bonus",
-            amount: { from: "constant", value: 3 },
-            default: 0,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "first-echo",
-    category: "modifier",
-    name: "First Echo",
-    description: "Repeat the first tile's value",
-    rarity: "rare",
-    weight: 2,
-    basePrice: 17,
-    effectType: "first-echo",
-    parameters: {},
-    triggers: [
-      {
-        id: "echo-first",
-        event: "score",
-        stage: "additive",
-        operations: [
-          { type: "add-score", amount: { from: "metric", key: "firstValue" } },
-        ],
-      },
-    ],
-  },
-  {
-    id: "high-risk",
-    category: "modifier",
-    name: "High Risk",
-    description: "One fewer selection; final score ×2",
-    rarity: "rare",
-    weight: 2,
-    basePrice: 11,
-    effectType: "high-risk",
-    parameters: { multiplier: 2 },
-    triggers: [
-      {
-        id: "double-score",
-        event: "score",
-        stage: "multiplicative",
-        operations: [{ type: "multiply-score", numerator: 2, denominator: 1 }],
-      },
-    ],
-  },
-  {
-    id: "tile-refresh",
-    category: "consumable",
-    name: "Tile Refresh",
-    description: "Replace this encounter's tiles",
-    rarity: "common",
-    weight: 4,
-    basePrice: 7,
-    effectType: "refresh-tiles",
-    parameters: {},
-  },
-  {
-    id: "limit-pulse",
-    category: "consumable",
-    name: "Limit Pulse",
-    description: "+1 selection this encounter",
-    rarity: "common",
-    weight: 4,
-    basePrice: 6,
-    effectType: "extra-selection",
-    parameters: { amount: 1 },
-  },
-  {
-    id: "score-pulse",
-    category: "consumable",
-    name: "Score Pulse",
-    description: "+15 score this encounter",
-    rarity: "uncommon",
-    weight: 3,
-    basePrice: 8,
-    effectType: "score-boost",
-    parameters: { amount: 15 },
-  },
-]);
-
+export interface RunConfiguration {
+  readonly definitions?: readonly ItemDefinition[];
+  readonly initialItems?: readonly string[];
+  rulesForEncounter?(
+    encounterNumber: number,
+    moduleId: string,
+  ): readonly RuleReference[];
+  targetForEncounter?(encounterNumber: number): number;
+  rewardForEncounter?(
+    encounterNumber: number,
+    score: number,
+    target: number,
+  ): number;
+}
 export interface OwnedItem {
   readonly instanceId: string;
   readonly definitionId: string;
@@ -241,24 +67,17 @@ export interface ShopState {
   readonly rerollCount: number;
   readonly rerollPrice: number;
 }
-export type SpecialRule = "reduced-limit" | "cyan-penalty";
-export interface PlayableTile {
-  readonly id: string;
-  readonly value: number;
-  readonly tags: readonly string[];
-}
 export interface EncounterBrief {
   readonly id: string;
   readonly number: number;
   readonly target: number;
-  readonly selectionLimit: number;
-  readonly tiles: readonly PlayableTile[];
-  readonly specialRule: SpecialRule | null;
-  readonly temporaryScoreBonus: number;
+  readonly rules: readonly RuleReference[];
+  /** Derived by consuming exactly one value from the authoritative run RNG. */
+  readonly moduleSeed: number;
 }
 export interface GameplaySignal {
   readonly type: string;
-  readonly sourceId?: string | undefined;
+  readonly sourceId?: string;
   readonly tags: readonly string[];
   readonly values: Readonly<Record<string, number>>;
 }
@@ -273,7 +92,7 @@ export interface ScoreLine {
   readonly label: string;
   readonly operation: "add" | "multiply" | "subtract" | "final";
   readonly value: number;
-  readonly sourceId?: string | undefined;
+  readonly sourceId?: string;
 }
 export type RunPhase =
   | "idle"
@@ -298,10 +117,9 @@ export interface RunState {
   readonly lastReport: EncounterReport | null;
   readonly scoreBreakdown: readonly ScoreLine[];
   readonly scoreLedger: readonly ScoreLedgerEntry[];
-  /** Stable selected adapter identity. Core never branches on this value. */
   readonly gameplayModuleId: string;
-  /** Adapter-owned JSON. Core stores it without inspecting its data. */
   readonly gameplaySession: GameplaySessionState | null;
+  readonly encounterEffects: readonly OwnedItem[];
 }
 export type RunCommand =
   | {
@@ -327,7 +145,7 @@ export type RunEvent =
   | { readonly type: "run-started"; readonly seed: number }
   | { readonly type: "encounter-prepared"; readonly brief: EncounterBrief }
   | { readonly type: "encounter-started"; readonly encounterId: string }
-  | { readonly type: "special-rule-introduced"; readonly rule: SpecialRule }
+  | { readonly type: "rule-introduced"; readonly rule: RuleReference }
   | {
       readonly type: "encounter-won" | "encounter-lost";
       readonly encounterId: string;
@@ -357,7 +175,7 @@ export type RunEvent =
   | {
       readonly type: "consumable-used";
       readonly instanceId: string;
-      readonly effectType: EffectType;
+      readonly handler?: RuleReference;
     }
   | {
       readonly type: "modifier-triggered";
@@ -383,20 +201,51 @@ export interface TransitionResult {
   readonly events: readonly RunEvent[];
 }
 
-const initialInventory = (): Inventory => ({
-  modifiers: [],
-  consumables: [
-    {
-      instanceId: "item-1",
-      definitionId: "score-pulse",
-      storedValues: {},
-      disabled: false,
-    },
-  ],
-  modifierCapacity: 4,
-  consumableCapacity: 2,
-});
-export function createInitialRunState(): RunState {
+const EMPTY_CONFIGURATION: RunConfiguration = {};
+const definitionsOf = (configuration: RunConfiguration) =>
+  configuration.definitions ?? [];
+const findDefinition = (configuration: RunConfiguration, id: string) =>
+  definitionsOf(configuration).find((definition) => definition.id === id);
+export function definitionFor(
+  id: string,
+  configuration: RunConfiguration = EMPTY_CONFIGURATION,
+): ItemDefinition | undefined {
+  return findDefinition(configuration, id);
+}
+const initialInventory = (configuration: RunConfiguration): Inventory => {
+  let next = 1;
+  const items = (configuration.initialItems ?? []).flatMap(
+    (definitionId): OwnedItem[] =>
+      findDefinition(configuration, definitionId)
+        ? [
+            {
+              instanceId: `item-${next++}`,
+              definitionId,
+              storedValues: {},
+              disabled: false,
+            },
+          ]
+        : [],
+  );
+  return {
+    modifiers: items.filter(
+      (item) =>
+        findDefinition(configuration, item.definitionId)?.category ===
+        "modifier",
+    ),
+    consumables: items.filter(
+      (item) =>
+        findDefinition(configuration, item.definitionId)?.category ===
+        "consumable",
+    ),
+    modifierCapacity: 4,
+    consumableCapacity: 2,
+  };
+};
+export function createInitialRunState(
+  configuration: RunConfiguration = EMPTY_CONFIGURATION,
+): RunState {
+  const inventory = initialInventory(configuration);
   return {
     phase: "idle",
     seed: null,
@@ -404,98 +253,72 @@ export function createInitialRunState(): RunState {
     encounterNumber: 0,
     currentEncounter: null,
     currency: 0,
-    inventory: initialInventory(),
+    inventory,
     shop: null,
-    nextInstanceId: 2,
+    nextInstanceId:
+      inventory.modifiers.length + inventory.consumables.length + 1,
     nextOfferId: 1,
     lastReport: null,
     scoreBreakdown: [],
     scoreLedger: [],
-    gameplayModuleId: "threshold-lab:combination-grid",
+    gameplayModuleId: "core:unselected",
     gameplaySession: null,
+    encounterEffects: [],
   };
 }
 export function targetForEncounter(number: number): number {
   return 25 + number * 4;
 }
-export function specialRuleForEncounter(number: number): SpecialRule | null {
-  return number === 3 ? "reduced-limit" : number === 6 ? "cyan-penalty" : null;
-}
-export function definitionFor(id: string): ItemDefinition | undefined {
-  return ITEM_DEFINITIONS.find((item) => item.id === id);
-}
-
-function generateTiles(
-  state: RandomState,
-  number: number,
-): { rng: RandomState; tiles: PlayableTile[] } {
-  let rng = state;
-  const tags = ["cyan", "amber", "violet"] as const;
-  const values = [7, 8, 9, 10, 11, 12, 7, 8, 9, 10, 11, 12];
-  for (let index = values.length - 1; index > 0; index--) {
-    const swap = randomInteger(rng, 0, index);
-    rng = swap.state;
-    [values[index], values[swap.value]] = [values[swap.value]!, values[index]!];
-  }
-  const tiles: PlayableTile[] = [];
-  for (let index = 0; index < 12; index++) {
-    const tag = randomInteger(rng, 0, 2);
-    rng = tag.state;
-    tiles.push({
-      id: `e${number}-t${index + 1}`,
-      value: values[index]!,
-      tags: [tags[tag.value]!],
-    });
-  }
-  return { rng, tiles };
-}
 function prepareEncounter(
   state: RandomState,
   number: number,
-  inventory: Inventory,
+  moduleId: string,
+  configuration: RunConfiguration,
 ) {
-  const generated = generateTiles(state, number);
-  const rule = specialRuleForEncounter(number);
-  const risk = inventory.modifiers.some(
-    (x) => definitionFor(x.definitionId)?.effectType === "high-risk",
-  );
-  return {
-    rng: generated.rng,
-    brief: {
-      id: `encounter-${number}`,
-      number,
-      target: targetForEncounter(number),
-      selectionLimit: 5 - (risk ? 1 : 0) - (rule === "reduced-limit" ? 1 : 0),
-      tiles: generated.tiles,
-      specialRule: rule,
-      temporaryScoreBonus: 0,
-    } satisfies EncounterBrief,
+  const derived = nextUint32(state);
+  const brief: EncounterBrief = {
+    id: `encounter-${number}`,
+    number,
+    target:
+      configuration.targetForEncounter?.(number) ?? targetForEncounter(number),
+    rules: configuration.rulesForEncounter?.(number, moduleId) ?? [],
+    moduleSeed: derived.value,
   };
+  return { rng: derived.state, brief };
 }
-function weightedDefinition(state: RandomState): {
-  rng: RandomState;
-  definition: ItemDefinition;
-} {
-  const total = ITEM_DEFINITIONS.reduce((s, x) => s + x.weight, 0);
+function weightedDefinition(
+  state: RandomState,
+  configuration: RunConfiguration,
+) {
+  const definitions = definitionsOf(configuration);
+  const total = definitions.reduce((sum, item) => sum + item.weight, 0);
+  if (total <= 0) return { rng: state, definition: undefined };
   const roll = randomInteger(state, 1, total);
   let cursor = roll.value;
-  for (const item of ITEM_DEFINITIONS) {
+  for (const item of definitions) {
     cursor -= item.weight;
     if (cursor <= 0) return { rng: roll.state, definition: item };
   }
-  return { rng: roll.state, definition: ITEM_DEFINITIONS[0]! };
+  return { rng: roll.state, definition: definitions[0] };
 }
 function generateShop(
   state: RandomState,
   nextOfferId: number,
-): { rng: RandomState; offers: ShopOffer[]; nextOfferId: number } {
-  let rng = state;
+  configuration: RunConfiguration,
+) {
+  let rng = state,
+    id = nextOfferId;
   const offers: ShopOffer[] = [];
-  let id = nextOfferId;
-  while (offers.length < 3) {
-    const choice = weightedDefinition(rng);
+  const maximum = Math.min(3, definitionsOf(configuration).length);
+  let attempts = 0;
+  while (offers.length < maximum && attempts++ < 100) {
+    const choice = weightedDefinition(rng, configuration);
     rng = choice.rng;
-    if (offers.some((x) => x.definitionId === choice.definition.id)) continue;
+    if (
+      !choice.definition ||
+      offers.some((offer) => offer.definitionId === choice.definition!.id)
+    )
+      continue;
     offers.push({
       id: `offer-${id++}`,
       definitionId: choice.definition.id,
@@ -522,85 +345,23 @@ function reject(
     ],
   };
 }
-
 function resolveScore(
   state: Readonly<RunState>,
   report: EncounterReport,
-): {
-  score: number;
-  target: number;
-  currency: number;
-  rng: RandomState;
-  inventory: Inventory;
-  events: RunEvent[];
-  lines: ScoreLine[];
-  ledger: ScoreLedgerEntry[];
-} {
-  const definitions: EffectDefinition[] = ITEM_DEFINITIONS.filter(
-    (definition) => definition.triggers,
-  ).map((definition) => ({
-    id: definition.id,
-    label: definition.name,
-    tags: [definition.category, definition.rarity],
-    triggers: definition.triggers!,
-  }));
-  const instances = state.inventory.modifiers.map((owned) => ({ ...owned }));
-  if (state.currentEncounter?.temporaryScoreBonus) {
-    definitions.push({
-      id: "encounter:score-pulse",
-      label: "Score Pulse",
-      tags: ["consumable"],
-      triggers: [
-        {
-          id: "temporary-score",
-          event: "score",
-          stage: "additive",
-          operations: [
-            {
-              type: "add-score",
-              amount: {
-                from: "constant",
-                value: state.currentEncounter.temporaryScoreBonus,
-              },
-            },
-          ],
-        },
-      ],
-    });
-    instances.push({
-      instanceId: "temporary-score-pulse",
-      definitionId: "encounter:score-pulse",
-      storedValues: {},
-      disabled: false,
-    });
-  }
-  if (state.currentEncounter?.specialRule === "cyan-penalty") {
-    definitions.push({
-      id: "encounter:cyan-penalty",
-      label: "Boss: cyan penalty",
-      tags: ["encounter-rule"],
-      triggers: [
-        {
-          id: "cyan-penalty",
-          event: "score",
-          stage: "encounter-rule",
-          operations: [
-            {
-              type: "add-score",
-              amount: { from: "metric", key: "cyan" },
-              factor: -5,
-            },
-          ],
-        },
-      ],
-    });
-    instances.push({
-      instanceId: "encounter-rule",
-      definitionId: "encounter:cyan-penalty",
-      storedValues: {},
-      disabled: false,
-    });
-  }
+  configuration: RunConfiguration,
+) {
+  const allInstances = [
+    ...state.inventory.modifiers,
+    ...state.encounterEffects,
+  ];
+  const definitions: EffectDefinition[] = definitionsOf(configuration)
+    .filter((definition) => definition.triggers)
+    .map((definition) => ({
+      id: definition.id,
+      label: definition.name,
+      tags: [definition.category, definition.rarity],
+      triggers: definition.triggers!,
+    }));
   const signal = {
     id: `score-${state.encounterNumber}`,
     sequence: 1,
@@ -611,7 +372,7 @@ function resolveScore(
       encounterId: report.encounterId,
       actionId: `action-${state.encounterNumber}`,
       encounterNumber: state.encounterNumber,
-      special: state.currentEncounter?.specialRule !== null,
+      special: state.currentEncounter!.rules.length > 0,
       occurrence: {
         chain: 1,
         action: 1,
@@ -627,9 +388,9 @@ function resolveScore(
       currency: state.currency,
       priceModifier: 0,
       rng: state.rng,
-      instances,
-      encounterTags: [],
-      allowances: { action: state.currentEncounter!.selectionLimit },
+      instances: allInstances,
+      encounterTags: state.currentEncounter!.rules.map((rule) => rule.id),
+      allowances: {},
       nextInstanceId: state.nextInstanceId,
     },
     signal,
@@ -648,34 +409,33 @@ function resolveScore(
       : owned;
   });
   const events: RunEvent[] = [];
-  for (const entry of resolved.ledgerEntries) {
+  for (const entry of resolved.ledgerEntries)
     if (
       entry.source.instanceId &&
-      !entry.source.instanceId.startsWith("encounter-") &&
-      !entry.source.instanceId.startsWith("temporary-")
+      state.inventory.modifiers.some(
+        (item) => item.instanceId === entry.source.instanceId,
+      )
     )
       events.push({
         type: "modifier-triggered",
         instanceId: entry.source.instanceId,
         label: entry.label,
       });
-  }
-  for (const event of resolved.events) {
+  for (const event of resolved.events)
     if (event.type === "stored-value-changed" && event.source.instanceId)
       events.push({
         type: "stored-value-increased",
         instanceId: event.source.instanceId,
         value: event.value ?? 0,
       });
-  }
   const base: ScoreLedgerEntry = {
     sequence: 1,
     encounterId: report.encounterId,
     actionId: signal.context.actionId,
-    source: { definitionId: "threshold-lab:gameplay" },
-    triggerId: "gameplay-score",
+    source: { definitionId: "core:gameplay-report" },
+    triggerId: "reported-score",
     operation: "base",
-    label: "Gameplay score",
+    label: "Reported score",
     before: 0,
     after: report.score,
     amount: report.score,
@@ -697,55 +457,23 @@ function resolveScore(
     after: resolved.state.score,
     stage: "post-result",
   };
-  const target: ScoreLedgerEntry = {
-    sequence: final.sequence + 1,
-    encounterId: report.encounterId,
-    actionId: signal.context.actionId,
-    source: { definitionId: "core:encounter-target" },
-    triggerId: "final-target",
-    operation: "target",
-    label: "Target",
-    before: resolved.state.target,
-    after: resolved.state.target,
-    amount: 0,
-    stage: "post-result",
-  };
-  const outcome: ScoreLedgerEntry = {
-    sequence: target.sequence + 1,
-    encounterId: report.encounterId,
-    actionId: signal.context.actionId,
-    source: { definitionId: "core:encounter-result" },
-    triggerId: "outcome",
-    operation: "outcome",
-    label:
-      resolved.state.score >= resolved.state.target
-        ? "Encounter won"
-        : "Encounter lost",
-    before: resolved.state.score,
-    after: resolved.state.score,
-    stage: "post-result",
-  };
-  const ledger = [base, ...effectLedger, final, target, outcome];
-  const lines: ScoreLine[] = ledger
-    .filter(
-      (entry) => entry.operation !== "target" && entry.operation !== "outcome",
-    )
-    .map((entry) => ({
-      label: entry.label,
-      operation:
-        entry.operation === "multiply"
-          ? "multiply"
-          : entry.operation === "final"
-            ? "final"
-            : (entry.amount ?? 0) < 0
-              ? "subtract"
-              : "add",
-      value:
-        entry.operation === "multiply"
-          ? entry.multiplier!.numerator / entry.multiplier!.denominator
-          : Math.abs(entry.amount ?? entry.after),
-      sourceId: entry.source.instanceId,
-    }));
+  const ledger = [base, ...effectLedger, final];
+  const lines: ScoreLine[] = ledger.map((entry) => ({
+    label: entry.label,
+    operation:
+      entry.operation === "multiply"
+        ? "multiply"
+        : entry.operation === "final"
+          ? "final"
+          : (entry.amount ?? 0) < 0
+            ? "subtract"
+            : "add",
+    value:
+      entry.operation === "multiply"
+        ? entry.multiplier!.numerator / entry.multiplier!.denominator
+        : Math.abs(entry.amount ?? entry.after),
+    ...(entry.source.instanceId ? { sourceId: entry.source.instanceId } : {}),
+  }));
   return {
     score: resolved.state.score,
     target: resolved.state.target,
@@ -757,20 +485,42 @@ function resolveScore(
     ledger,
   };
 }
-
+export function createRunEngine(
+  configuration: RunConfiguration = EMPTY_CONFIGURATION,
+) {
+  const handleConfigured = (
+    state: Readonly<RunState>,
+    command: RunCommand,
+  ): TransitionResult => handle(state, command, configuration);
+  return {
+    createInitialState: () => createInitialRunState(configuration),
+    handle: handleConfigured,
+    definitionFor: (id: string) => definitionFor(id, configuration),
+    configuration,
+  } as const;
+}
 export function handle(
   state: Readonly<RunState>,
   command: RunCommand,
+  configuration: RunConfiguration = EMPTY_CONFIGURATION,
 ): TransitionResult {
   switch (command.type) {
     case "start-run": {
       if (!Number.isSafeInteger(command.seed))
         return reject(state, command, "Seed must be a safe integer");
-      const seed = command.seed >>> 0;
-      const inventory = initialInventory();
-      const generated = prepareEncounter(createRandom(seed), 1, inventory);
-      const next: RunState = {
-        ...createInitialRunState(),
+      const moduleId = command.gameplayModuleId ?? "core:unselected";
+      if (!moduleId.includes(":"))
+        return reject(state, command, "Gameplay module ID must be namespaced");
+      const seed = command.seed >>> 0,
+        inventory = initialInventory(configuration),
+        generated = prepareEncounter(
+          createRandom(seed),
+          1,
+          moduleId,
+          configuration,
+        );
+      const next = {
+        ...createInitialRunState(configuration),
         phase: "encounter-ready",
         seed,
         rng: generated.rng,
@@ -778,10 +528,8 @@ export function handle(
         currentEncounter: generated.brief,
         currency: 10,
         inventory,
-        gameplayModuleId:
-          command.gameplayModuleId ?? "threshold-lab:combination-grid",
-        gameplaySession: null,
-      };
+        gameplayModuleId: moduleId,
+      } satisfies RunState;
       return {
         state: next,
         events: [
@@ -823,14 +571,10 @@ export function handle(
           scoreLedger: [],
         },
         events: [
-          ...(state.currentEncounter.specialRule
-            ? [
-                {
-                  type: "special-rule-introduced",
-                  rule: state.currentEncounter.specialRule,
-                } as const,
-              ]
-            : []),
+          ...state.currentEncounter.rules.map((rule) => ({
+            type: "rule-introduced" as const,
+            rule,
+          })),
           { type: "encounter-started", encounterId: state.currentEncounter.id },
         ],
       };
@@ -844,7 +588,13 @@ export function handle(
           command,
           "Report does not match the active encounter",
         );
-      const resolved = resolveScore(state, command.report);
+      if (!state.gameplaySession)
+        return reject(
+          state,
+          command,
+          "A validated gameplay session is required",
+        );
+      const resolved = resolveScore(state, command.report, configuration);
       if (resolved.score < resolved.target)
         return {
           state: {
@@ -867,24 +617,14 @@ export function handle(
             { type: "run-failed", encounterNumber: state.encounterNumber },
           ],
         };
-      let reward = 10 + state.encounterNumber * 2;
-      for (const owned of resolved.inventory.modifiers) {
-        const def = definitionFor(owned.definitionId);
-        if (
-          def?.effectType === "perfect-reward" &&
-          resolved.score >=
-            state.currentEncounter.target + Number(def.parameters.margin)
-        ) {
-          reward += Number(def.parameters.currency);
-          resolved.events.push({
-            type: "modifier-triggered",
-            instanceId: owned.instanceId,
-            label: def.name,
-          });
-        }
-      }
-      const total = resolved.currency + reward;
-      const complete = state.encounterNumber === ENCOUNTER_COUNT;
+      const reward =
+        configuration.rewardForEncounter?.(
+          state.encounterNumber,
+          resolved.score,
+          resolved.target,
+        ) ?? 10 + state.encounterNumber * 2;
+      const total = resolved.currency + reward,
+        complete = state.encounterNumber === ENCOUNTER_COUNT;
       return {
         state: {
           ...state,
@@ -906,7 +646,7 @@ export function handle(
           },
           { type: "currency-awarded", amount: reward, total },
           ...(complete
-            ? [{ type: "run-completed", currency: total } as const]
+            ? [{ type: "run-completed" as const, currency: total }]
             : []),
         ],
       };
@@ -914,8 +654,12 @@ export function handle(
     case "enter-shop": {
       if (state.phase !== "reward")
         return reject(state, command, "A won encounter reward is required");
-      const generated = generateShop(state.rng, state.nextOfferId);
-      const shop = { offers: generated.offers, rerollCount: 0, rerollPrice: 5 };
+      const generated = generateShop(
+          state.rng,
+          state.nextOfferId,
+          configuration,
+        ),
+        shop = { offers: generated.offers, rerollCount: 0, rerollPrice: 5 };
       return {
         state: {
           ...state,
@@ -933,13 +677,17 @@ export function handle(
         return reject(state, command, "An open shop is required");
       if (state.currency < state.shop.rerollPrice)
         return reject(state, command, "Insufficient currency");
-      const generated = generateShop(state.rng, state.nextOfferId);
-      const cost = state.shop.rerollPrice;
-      const shop = {
-        offers: generated.offers,
-        rerollCount: state.shop.rerollCount + 1,
-        rerollPrice: cost + 2,
-      };
+      const generated = generateShop(
+          state.rng,
+          state.nextOfferId,
+          configuration,
+        ),
+        cost = state.shop.rerollPrice,
+        shop = {
+          offers: generated.offers,
+          rerollCount: state.shop.rerollCount + 1,
+          rerollPrice: cost + 2,
+        };
       return {
         state: {
           ...state,
@@ -954,33 +702,35 @@ export function handle(
     case "buy-offer": {
       if (state.phase !== "shop" || !state.shop)
         return reject(state, command, "An open shop is required");
-      const offer = state.shop.offers.find((x) => x.id === command.offerId);
+      const offer = state.shop.offers.find(
+        (candidate) => candidate.id === command.offerId,
+      );
       if (!offer) return reject(state, command, "Offer was not found");
       if (state.currency < offer.price)
         return reject(state, command, "Insufficient currency");
       const list =
-        offer.category === "modifier"
-          ? state.inventory.modifiers
-          : state.inventory.consumables;
-      const capacity =
-        offer.category === "modifier"
-          ? state.inventory.modifierCapacity
-          : state.inventory.consumableCapacity;
+          offer.category === "modifier"
+            ? state.inventory.modifiers
+            : state.inventory.consumables,
+        capacity =
+          offer.category === "modifier"
+            ? state.inventory.modifierCapacity
+            : state.inventory.consumableCapacity;
       if (list.length >= capacity)
         return reject(state, command, "Inventory is full");
       const instance = {
-        instanceId: `item-${state.nextInstanceId}`,
-        definitionId: offer.definitionId,
-        storedValues: {},
-        disabled: false,
-      };
-      const inventory = {
-        ...state.inventory,
-        [offer.category === "modifier" ? "modifiers" : "consumables"]: [
-          ...list,
-          instance,
-        ],
-      };
+          instanceId: `item-${state.nextInstanceId}`,
+          definitionId: offer.definitionId,
+          storedValues: {},
+          disabled: false,
+        },
+        inventory = {
+          ...state.inventory,
+          [offer.category === "modifier" ? "modifiers" : "consumables"]: [
+            ...list,
+            instance,
+          ],
+        };
       return {
         state: {
           ...state,
@@ -989,7 +739,9 @@ export function handle(
           nextInstanceId: state.nextInstanceId + 1,
           shop: {
             ...state.shop,
-            offers: state.shop.offers.filter((x) => x.id !== offer.id),
+            offers: state.shop.offers.filter(
+              (candidate) => candidate.id !== offer.id,
+            ),
           },
         },
         events: [{ type: "item-purchased", offerId: offer.id, instance }],
@@ -1001,10 +753,12 @@ export function handle(
       const owned = [
         ...state.inventory.modifiers,
         ...state.inventory.consumables,
-      ].find((x) => x.instanceId === command.instanceId);
+      ].find((item) => item.instanceId === command.instanceId);
       if (!owned) return reject(state, command, "Item was not found");
-      const def = definitionFor(owned.definitionId)!;
-      const amount = Math.floor(def.basePrice / 2);
+      const definition = findDefinition(configuration, owned.definitionId);
+      if (!definition)
+        return reject(state, command, "Item definition is unavailable");
+      const amount = Math.floor(definition.basePrice / 2);
       return {
         state: {
           ...state,
@@ -1012,10 +766,10 @@ export function handle(
           inventory: {
             ...state.inventory,
             modifiers: state.inventory.modifiers.filter(
-              (x) => x.instanceId !== owned.instanceId,
+              (item) => item.instanceId !== owned.instanceId,
             ),
             consumables: state.inventory.consumables.filter(
-              (x) => x.instanceId !== owned.instanceId,
+              (item) => item.instanceId !== owned.instanceId,
             ),
           },
         },
@@ -1030,38 +784,23 @@ export function handle(
           "Consumables are used before an encounter starts",
         );
       const owned = state.inventory.consumables.find(
-        (x) => x.instanceId === command.instanceId,
+        (item) => item.instanceId === command.instanceId,
       );
       if (!owned) return reject(state, command, "Consumable was not found");
-      const def = definitionFor(owned.definitionId)!;
-      let rng = state.rng;
-      let encounter = state.currentEncounter;
-      if (def.effectType === "refresh-tiles") {
-        const generated = generateTiles(rng, state.encounterNumber);
-        rng = generated.rng;
-        encounter = { ...encounter, tiles: generated.tiles };
-      } else if (def.effectType === "extra-selection")
-        encounter = {
-          ...encounter,
-          selectionLimit:
-            encounter.selectionLimit + Number(def.parameters.amount),
-        };
-      else if (def.effectType === "score-boost")
-        encounter = {
-          ...encounter,
-          temporaryScoreBonus:
-            encounter.temporaryScoreBonus + Number(def.parameters.amount),
-        };
-      else return reject(state, command, "Item is not a consumable");
+      const definition = findDefinition(configuration, owned.definitionId);
+      if (!definition?.use) return reject(state, command, "Item is not usable");
+      const encounterEffects =
+        definition.use.type === "encounter-effect"
+          ? [...state.encounterEffects, owned]
+          : state.encounterEffects;
       return {
         state: {
           ...state,
-          rng,
-          currentEncounter: encounter,
+          encounterEffects,
           inventory: {
             ...state.inventory,
             consumables: state.inventory.consumables.filter(
-              (x) => x.instanceId !== owned.instanceId,
+              (item) => item.instanceId !== owned.instanceId,
             ),
           },
         },
@@ -1069,7 +808,9 @@ export function handle(
           {
             type: "consumable-used",
             instanceId: owned.instanceId,
-            effectType: def.effectType,
+            ...(definition.use.type === "custom"
+              ? { handler: definition.use.handler }
+              : {}),
           },
         ],
       };
@@ -1081,8 +822,13 @@ export function handle(
         !(command.type === "advance" && state.phase === "reward")
       )
         return reject(state, command, "An open shop is required");
-      const number = state.encounterNumber + 1;
-      const generated = prepareEncounter(state.rng, number, state.inventory);
+      const number = state.encounterNumber + 1,
+        generated = prepareEncounter(
+          state.rng,
+          number,
+          state.gameplayModuleId,
+          configuration,
+        );
       return {
         state: {
           ...state,
@@ -1091,6 +837,7 @@ export function handle(
           encounterNumber: number,
           currentEncounter: generated.brief,
           gameplaySession: null,
+          encounterEffects: [],
           shop: null,
           lastReport: null,
           scoreBreakdown: [],
@@ -1103,14 +850,13 @@ export function handle(
       if (state.phase === "idle" || state.phase === "abandoned")
         return reject(state, command, "No run is active");
       return {
-        state: { ...createInitialRunState(), phase: "abandoned" },
+        state: {
+          ...createInitialRunState(configuration),
+          phase: "abandoned",
+          gameplayModuleId: state.gameplayModuleId,
+        },
         events: [{ type: "run-abandoned" }],
       };
     }
-    default:
-      return assertNever(command);
   }
-}
-function assertNever(value: never): never {
-  throw new Error(`Unhandled command: ${JSON.stringify(value)}`);
 }

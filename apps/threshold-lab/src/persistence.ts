@@ -24,7 +24,14 @@ export class RunSaveStore {
     return value === null ? null : parseSaveFile(value);
   }
   save(run: RunState): void {
-    this.storage.setItem(SAVE_KEY, JSON.stringify(createSaveFile(run)));
+    this.storage.setItem(
+      SAVE_KEY,
+      JSON.stringify(
+        createSaveFile(run, undefined, {
+          content: { packId: "threshold-lab:core", packVersion: 3 },
+        }),
+      ),
+    );
   }
   clear(): void {
     this.storage.removeItem(SAVE_KEY);

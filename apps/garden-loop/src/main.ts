@@ -1,22 +1,20 @@
-import { createRandom } from "@core-loop/core";
 import { gardenModule, type GardenState } from "./gameplay";
 import "./style.css";
 const root = document.querySelector<HTMLElement>("#app")!;
 const seed =
   Number(new URLSearchParams(location.search).get("seed") ?? 7) >>> 0;
-let rng = createRandom(seed),
-  round = 1,
+let round = 1,
   state: GardenState;
 function begin() {
   const x = gardenModule.createEncounter({
     encounterId: `growing-${round}`,
     encounterNumber: round,
     target: 9 + round,
-    specialRuleId: round % 3 === 0 ? "garden-loop:bad-weather" : null,
-    rng,
+    rules:
+      round % 3 === 0 ? [{ id: "garden-loop:bad-weather", version: 1 }] : [],
+    seed: (seed + round) >>> 0,
   });
   state = x.state;
-  rng = x.rng;
   render();
 }
 function render() {
@@ -41,7 +39,7 @@ function render() {
           else {
             localStorage.setItem(
               "garden.save",
-              JSON.stringify({ seed, round, rng }),
+              JSON.stringify({ seed, round }),
             );
             root.innerHTML += `<h2>Garden centre</h2><p>Spend compost on a helper or supply.</p><button id="next">Next session</button>`;
             document.querySelector<HTMLButtonElement>("#next")!.onclick = begin;

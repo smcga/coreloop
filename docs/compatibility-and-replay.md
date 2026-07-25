@@ -20,9 +20,9 @@ Threshold Lab's worked external examples are in `apps/threshold-lab/src/extensio
 
 ## Save envelope and migrations
 
-Save format **4** contains framework version, content pack ID/version, gameplay module ID/version, policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions.
+Save format **5** contains framework version, content pack ID/version, gameplay module ID/version, policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions.
 
-The built-in graph is `1 → 2 → 3 → 4`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
+The built-in graph is `1 → 2 → 3 → 4 → 5`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity; v5 initialises the generic per-encounter effect list. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
 
 `loadSaveFile` can check installed content/module versions and reports missing packs, unsupported versions, and unsafe numeric state with paths. The host may offer reset, compatible import, inspection, or return-to-menu; it never silently substitutes or deletes content.
 
@@ -47,3 +47,7 @@ Autosaves, accepted inputs, and checkpoints occur only after complete transition
 5. Record accepted commands/actions, `createReplay`, export, and verify via an executor backed by the module registry.
 
 Threshold Lab's menu imports/exports save and replay JSON and shows migration/validation messages. Deterministic replay execution is tested in Node. No server, binary fixture, or executable content is required.
+
+## Module and rule compatibility
+
+Current encounter state carries namespaced, versioned rule references and the save/replay envelope carries module identity/version. Module data remains in its opaque session envelope. Unknown installed identities are machine-readable compatibility failures. The historical v1-v3 migration literals are deliberately retained only to identify old Threshold Lab fixtures; migrations clone data, do not invoke modules, and consume no RNG. New replay commands should record `gameplayModuleId` on `start-run`; module actions remain separate replay inputs.
