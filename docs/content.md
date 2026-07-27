@@ -100,3 +100,22 @@ Add complete Lab/music terms—including the three categories above—assemble a
 ## Framework composition
 
 Concrete item names, visual metadata, namespaced rule IDs, and module capability requirements belong here or in an application. `thresholdLabRunConfiguration` adapts Threshold Lab definitions to core's generic `ItemDefinition`/effect contracts. Core receives this immutable configuration through `createRunEngine`; definitions are not copied into `RunState`. A different application supplies a different configuration without editing core.
+
+# Deterministic shops
+
+Authored `shop-pool` definitions are adapted into versioned `ShopPoolProvider`s
+at engine construction. Providers receive an immutable `ShopContext`, never the
+run state, and return presentation-free candidates in stable provider/candidate
+order. Eligibility and copy limits are resolved before randomness. Shop
+generation then consumes exactly one RNG value per offer and removes that
+candidate from the selection list, so it cannot retry indefinitely.
+
+Offers persist the provider and pool identity, provider version, resolved price,
+and acquisition operation. Prices are resolved once with `ShopPricingPolicy`
+using `Math.round` for offers; purchases never recalculate them. Attachments
+enter a pending acquisition until `choose-acquisition-target` validates the host,
+tags, and exclusive slot. Run upgrades are stored by identity and the built-in
+numeric vocabulary currently supports `capacity:<category>` and `rerollPrice`.
+
+Only top-level instances may be sold. Selling a host removes its attached
+children with it; an attached child cannot accidentally be sold independently.

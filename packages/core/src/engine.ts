@@ -14,6 +14,10 @@ import type {
   RuntimeContentDefinition,
   RuntimeContentProvider,
   RuntimeStartingLoadout,
+  ShopCandidate,
+  ShopContext,
+  ShopPoolProvider,
+  AcquisitionOperation,
 } from "./content";
 import { FrameworkError } from "./errors";
 import {
@@ -30,6 +34,9 @@ export interface RunConfiguration {
   readonly policies?: RunPolicySet;
   readonly content?: RuntimeContentProvider;
   readonly defaultLoadoutId?: string;
+  readonly shopProviders?: readonly ShopPoolProvider[];
+  readonly gameplayCapabilities?: Readonly<Record<string, readonly string[]>>;
+  readonly rarityPriceMultipliers?: Readonly<Record<string, number>>;
 }
 export interface ContentInstance {
   readonly instanceId: string;
@@ -53,11 +60,18 @@ export interface ShopOffer {
   readonly definitionId: string;
   readonly category: string;
   readonly price: number;
+  readonly providerId: string;
+  readonly providerVersion: number;
+  readonly poolId: string;
+  readonly acquisition: AcquisitionOperation;
 }
 export interface ShopState {
   readonly offers: readonly ShopOffer[];
   readonly rerollCount: number;
   readonly rerollPrice: number;
+}
+export interface PendingAcquisition {
+  readonly offer: ShopOffer;
 }
 export interface EncounterBrief {
   readonly id: string;
@@ -107,6 +121,7 @@ export interface RunState {
   readonly currency: number;
   readonly inventory: Inventory;
   readonly shop: ShopState | null;
+  readonly pendingAcquisition: PendingAcquisition | null;
   readonly nextInstanceId: number;
   readonly nextOfferId: number;
   readonly lastReport: EncounterReport | null;
@@ -132,6 +147,11 @@ export type RunCommand =
   | { readonly type: "submit-encounter"; readonly report: EncounterReport }
   | { readonly type: "enter-shop" }
   | { readonly type: "buy-offer"; readonly offerId: string }
+  | {
+      readonly type: "choose-acquisition-target";
+      readonly offerId: string;
+      readonly targetInstanceId: string;
+    }
   | { readonly type: "sell-item"; readonly instanceId: string }
   | { readonly type: "use-consumable"; readonly instanceId: string }
   | { readonly type: "reroll-shop" }
@@ -163,6 +183,20 @@ export type RunEvent =
       readonly type: "item-purchased";
       readonly offerId: string;
       readonly instance: ContentInstance;
+    }
+  | { readonly type: "acquisition-target-requested"; readonly offerId: string }
+  | {
+      readonly type: "acquisition-target-resolved";
+      readonly offerId: string;
+      readonly targetInstanceId: string;
+      readonly instance: ContentInstance;
+    }
+  | { readonly type: "run-upgrade-applied"; readonly definitionId: string }
+  | {
+      readonly type: "shop-candidate-rejected";
+      readonly providerId: string;
+      readonly candidateId: string;
+      readonly reason: string;
     }
   | {
       readonly type: "item-sold";
@@ -246,6 +280,23 @@ const createInstance = (
   attachmentIds: [],
   transformationHistory: [],
 });
+const rerollPrice = (
+  state: Readonly<RunState>,
+  configuration: RunConfiguration,
+  count: number,
+  entry: EncounterScheduleEntry,
+) => {
+  const base = (
+    configuration.policies ?? defaultPolicies
+  ).shopPricing.rerollPrice({ rerollCount: count, entry });
+  const adjustment = state.inventory.upgradeIds.reduce(
+    (sum, id) =>
+      sum +
+      (findDefinition(configuration, id)?.upgradeChanges?.rerollPrice ?? 0),
+    0,
+  );
+  return Math.max(0, Math.round(base + adjustment));
+};
 const initialInventory = (
   configuration: RunConfiguration,
   loadout?: RuntimeStartingLoadout,
@@ -293,6 +344,7 @@ export function createInitialRunState(
     currency: 0,
     inventory,
     shop: null,
+    pendingAcquisition: null,
     nextInstanceId: 1,
     nextOfferId: 1,
     lastReport: null,
@@ -320,58 +372,138 @@ function prepareEncounter(
   };
   return { rng: derived.state, brief };
 }
-function weightedDefinition(
-  state: RandomState,
+function shopContext(
+  state: Readonly<RunState>,
   configuration: RunConfiguration,
-  gameplayModuleId: string,
+): ShopContext {
+  const definitions = state.inventory.instances.map((item) =>
+    findDefinition(configuration, item.definitionId),
+  );
+  const copyCounts: Record<string, number> = {};
+  for (const item of state.inventory.instances)
+    copyCounts[item.definitionId] = (copyCounts[item.definitionId] ?? 0) + 1;
+  return Object.freeze({
+    encounterNumber: state.encounterNumber,
+    schedulePosition: state.schedulePosition,
+    previousEncounterSpecial:
+      state.schedule[state.schedulePosition]?.kind === "special",
+    gameplayModuleId: state.gameplayModuleId,
+    capabilities:
+      configuration.gameplayCapabilities?.[state.gameplayModuleId] ?? [],
+    currency: state.currency,
+    ownedDefinitionIds: state.inventory.instances.map(
+      (item) => item.definitionId,
+    ),
+    ownedCategories: definitions.flatMap((item) =>
+      item ? [item.category] : [],
+    ),
+    ownedTags: definitions.flatMap((item) => item?.tags ?? []),
+    copyCounts,
+    activeRunUpgrades: state.inventory.upgradeIds,
+    shopNumber: state.schedulePosition + 1,
+    rerollNumber: state.shop?.rerollCount ?? 0,
+    runTags: [],
+    poolIds:
+      configuration.shopProviders?.flatMap((provider) => provider.poolIds) ??
+      [],
+  });
+}
+function eligibleCandidates(
+  state: Readonly<RunState>,
+  configuration: RunConfiguration,
 ) {
-  const definitions = definitionsOf(configuration, gameplayModuleId);
-  const total = definitions.reduce((sum, item) => sum + (item.weight ?? 0), 0);
-  if (total <= 0) return { rng: state, definition: undefined };
-  const roll = randomInteger(state, 1, total);
-  let cursor = roll.value;
-  for (const item of definitions) {
-    cursor -= item.weight ?? 0;
-    if (cursor <= 0) return { rng: roll.state, definition: item };
+  const context = shopContext(state, configuration),
+    rejected: RunEvent[] = [],
+    candidates: ShopCandidate[] = [];
+  for (const provider of configuration.shopProviders ?? []) {
+    for (const candidate of provider.getCandidates(context)) {
+      let reason: string | undefined;
+      if (
+        candidate.providerId !== provider.id ||
+        candidate.providerVersion !== provider.version
+      )
+        reason = "provider identity mismatch";
+      else if (
+        !(candidate.weight > 0) ||
+        !Number.isSafeInteger(candidate.weight)
+      )
+        reason = "weight must be a positive integer";
+      else if (
+        (context.copyCounts[candidate.definitionId] ?? 0) >=
+        (candidate.maximumCopies ?? Number.POSITIVE_INFINITY)
+      )
+        reason = "maximum copies owned";
+      else if (!findDefinition(configuration, candidate.definitionId))
+        reason = "definition unavailable";
+      if (reason)
+        rejected.push({
+          type: "shop-candidate-rejected",
+          providerId: provider.id,
+          candidateId: candidate.id,
+          reason,
+        });
+      else candidates.push(candidate);
+    }
   }
-  return { rng: roll.state, definition: definitions[0] };
+  return { candidates, rejected };
 }
 function generateShop(
-  state: RandomState,
+  run: Readonly<RunState>,
   nextOfferId: number,
   configuration: RunConfiguration,
   entry: EncounterScheduleEntry,
-  gameplayModuleId: string,
 ) {
   const policies = configuration.policies ?? defaultPolicies;
-  let rng = state,
+  let rng = run.rng,
     id = nextOfferId;
   const offers: ShopOffer[] = [];
+  const eligible = eligibleCandidates(run, configuration);
+  const remaining = [...eligible.candidates];
   const maximum = Math.min(
     policies.shopGeneration.offerCount({ entry }),
-    definitionsOf(configuration, gameplayModuleId).length,
+    remaining.length,
   );
-  let attempts = 0;
-  while (offers.length < maximum && attempts++ < 100) {
-    const choice = weightedDefinition(rng, configuration, gameplayModuleId);
-    rng = choice.rng;
-    if (
-      !choice.definition ||
-      offers.some((offer) => offer.definitionId === choice.definition!.id)
-    )
-      continue;
+  // Exactly one RNG value is consumed per selected offer. Removing the selected
+  // candidate makes uniqueness stable and avoids retry loops.
+  while (offers.length < maximum) {
+    const total = remaining.reduce((sum, item) => sum + item.weight, 0);
+    const roll = randomInteger(rng, 1, total);
+    rng = roll.state;
+    let cursor = roll.value,
+      index = 0;
+    for (; index < remaining.length; index++) {
+      cursor -= remaining[index]!.weight;
+      if (cursor <= 0) break;
+    }
+    const choice = remaining.splice(index, 1)[0]!;
     offers.push({
       id: `offer-${id++}`,
-      definitionId: choice.definition.id,
-      category: choice.definition.category,
+      definitionId: choice.definitionId,
+      category: choice.category,
       price: policies.shopPricing.offerPrice({
-        basePrice: choice.definition.basePrice ?? 0,
-        category: choice.definition.category,
+        basePrice: choice.basePrice,
+        category: choice.category,
         entry,
+        ...(choice.rarity ? { rarity: choice.rarity } : {}),
+        ...(choice.rarity &&
+        configuration.rarityPriceMultipliers?.[choice.rarity] !== undefined
+          ? {
+              rarityMultiplier:
+                configuration.rarityPriceMultipliers[choice.rarity],
+            }
+          : {}),
+        providerId: choice.providerId,
+        poolId: choice.poolId,
+        rerollCount: run.shop?.rerollCount ?? 0,
+        upgradeIds: run.inventory.upgradeIds,
       }),
+      providerId: choice.providerId,
+      providerVersion: choice.providerVersion,
+      poolId: choice.poolId,
+      acquisition: choice.acquisition,
     });
   }
-  return { rng, offers, nextOfferId: id };
+  return { rng, offers, nextOfferId: id, events: eligible.rejected };
 }
 function reject(
   state: Readonly<RunState>,
@@ -544,6 +676,26 @@ export function createRunEngine(configuration: RunConfiguration) {
     throw new FrameworkError(
       "duplicate-id",
       "Each run policy role requires a distinct policy",
+    );
+  const providers = configuration.shopProviders ?? [];
+  if (
+    providers.some(
+      (provider) =>
+        !provider.id.includes(":") ||
+        !Number.isSafeInteger(provider.version) ||
+        provider.version < 1,
+    )
+  )
+    throw new FrameworkError(
+      "invalid-policy",
+      "Shop provider IDs must be namespaced and versions must be positive integers",
+    );
+  if (
+    new Set(providers.map((provider) => provider.id)).size !== providers.length
+  )
+    throw new FrameworkError(
+      "duplicate-id",
+      "Shop provider IDs must be unique",
     );
   const handleConfigured = (
     state: Readonly<RunState>,
@@ -786,19 +938,20 @@ export function handle(
       if (state.phase !== "reward")
         return reject(state, command, "A won encounter reward is required");
       const generated = generateShop(
-          state.rng,
+          state,
           state.nextOfferId,
           configuration,
           state.schedule[state.schedulePosition]!,
-          state.gameplayModuleId,
         ),
         shop = {
           offers: generated.offers,
           rerollCount: 0,
-          rerollPrice: policies.shopPricing.rerollPrice({
-            rerollCount: 0,
-            entry: state.schedule[state.schedulePosition]!,
-          }),
+          rerollPrice: rerollPrice(
+            state,
+            configuration,
+            0,
+            state.schedule[state.schedulePosition]!,
+          ),
         };
       return {
         state: {
@@ -809,7 +962,10 @@ export function handle(
           nextOfferId: generated.nextOfferId,
           currentEncounter: null,
         },
-        events: [{ type: "shop-entered", offers: shop.offers }],
+        events: [
+          ...generated.events,
+          { type: "shop-entered", offers: shop.offers },
+        ],
       };
     }
     case "reroll-shop": {
@@ -818,20 +974,21 @@ export function handle(
       if (state.currency < state.shop.rerollPrice)
         return reject(state, command, "Insufficient currency");
       const generated = generateShop(
-          state.rng,
+          state,
           state.nextOfferId,
           configuration,
           state.schedule[state.schedulePosition]!,
-          state.gameplayModuleId,
         ),
         cost = state.shop.rerollPrice,
         shop = {
           offers: generated.offers,
           rerollCount: state.shop.rerollCount + 1,
-          rerollPrice: policies.shopPricing.rerollPrice({
-            rerollCount: state.shop.rerollCount + 1,
-            entry: state.schedule[state.schedulePosition]!,
-          }),
+          rerollPrice: rerollPrice(
+            state,
+            configuration,
+            state.shop.rerollCount + 1,
+            state.schedule[state.schedulePosition]!,
+          ),
         };
       return {
         state: {
@@ -841,7 +998,10 @@ export function handle(
           shop,
           nextOfferId: generated.nextOfferId,
         },
-        events: [{ type: "shop-rerolled", offers: shop.offers, cost }],
+        events: [
+          ...generated.events,
+          { type: "shop-rerolled", offers: shop.offers, cost },
+        ],
       };
     }
     case "buy-offer": {
@@ -867,6 +1027,38 @@ export function handle(
         count >= (state.inventory.capacities[offer.category] ?? 0)
       )
         return reject(state, command, "Inventory is full");
+      if (offer.acquisition.type === "attachment")
+        return {
+          state: { ...state, pendingAcquisition: { offer } },
+          events: [{ type: "acquisition-target-requested", offerId: offer.id }],
+        };
+      if (offer.acquisition.type === "run-upgrade") {
+        if (state.inventory.upgradeIds.includes(definition.id))
+          return reject(state, command, "Run upgrade is already active");
+        const changes = definition.upgradeChanges ?? {};
+        const capacities = { ...state.inventory.capacities };
+        for (const [key, value] of Object.entries(changes))
+          if (key.startsWith("capacity:"))
+            capacities[key.slice(9)] = (capacities[key.slice(9)] ?? 0) + value;
+        return {
+          state: {
+            ...state,
+            currency: state.currency - offer.price,
+            inventory: {
+              ...state.inventory,
+              capacities,
+              upgradeIds: [...state.inventory.upgradeIds, definition.id],
+            },
+            shop: {
+              ...state.shop,
+              offers: state.shop.offers.filter((item) => item.id !== offer.id),
+            },
+          },
+          events: [
+            { type: "run-upgrade-applied", definitionId: definition.id },
+          ],
+        };
+      }
       const instance = createInstance(definition, state.nextInstanceId),
         inventory = {
           ...state.inventory,
@@ -888,17 +1080,117 @@ export function handle(
         events: [{ type: "item-purchased", offerId: offer.id, instance }],
       };
     }
+    case "choose-acquisition-target": {
+      const pending = state.pendingAcquisition;
+      if (
+        state.phase !== "shop" ||
+        !state.shop ||
+        !pending ||
+        pending.offer.id !== command.offerId
+      )
+        return reject(
+          state,
+          command,
+          "No matching acquisition target is required",
+        );
+      if (state.currency < pending.offer.price)
+        return reject(state, command, "Insufficient currency");
+      const operation = pending.offer.acquisition;
+      if (operation.type !== "attachment")
+        return reject(state, command, "Offer does not require a target");
+      const host = state.inventory.instances.find(
+        (item) =>
+          item.instanceId === command.targetInstanceId && !item.hostInstanceId,
+      );
+      const hostDefinition =
+        host && findDefinition(configuration, host.definitionId);
+      const definition = findDefinition(
+        configuration,
+        pending.offer.definitionId,
+      );
+      if (
+        !host ||
+        !hostDefinition ||
+        !definition ||
+        !operation.hostCategories.includes(hostDefinition.category) ||
+        operation.requiredHostTags?.some(
+          (tag) => !hostDefinition.tags.includes(tag),
+        )
+      )
+        return reject(state, command, "Acquisition target is incompatible");
+      if (
+        operation.slot &&
+        host.attachmentIds.some(
+          (id) =>
+            findDefinition(
+              configuration,
+              state.inventory.instances.find((item) => item.instanceId === id)
+                ?.definitionId ?? "",
+            )?.attachmentSlot === operation.slot,
+        )
+      )
+        return reject(state, command, "Attachment slot is occupied");
+      const child = {
+        ...createInstance(definition, state.nextInstanceId),
+        hostInstanceId: host.instanceId,
+      };
+      const instances = [
+        ...state.inventory.instances.map((item) =>
+          item.instanceId === host.instanceId
+            ? {
+                ...item,
+                attachmentIds: [...item.attachmentIds, child.instanceId],
+              }
+            : item,
+        ),
+        child,
+      ];
+      return {
+        state: {
+          ...state,
+          currency: state.currency - pending.offer.price,
+          nextInstanceId: state.nextInstanceId + 1,
+          pendingAcquisition: null,
+          inventory: { ...state.inventory, instances },
+          shop: {
+            ...state.shop,
+            offers: state.shop.offers.filter(
+              (item) => item.id !== pending.offer.id,
+            ),
+          },
+        },
+        events: [
+          {
+            type: "acquisition-target-resolved",
+            offerId: pending.offer.id,
+            targetInstanceId: host.instanceId,
+            instance: child,
+          },
+        ],
+      };
+    }
     case "sell-item": {
       if (state.phase !== "shop")
         return reject(state, command, "Items can only be sold in the shop");
       const owned = state.inventory.instances.find(
-        (item) => item.instanceId === command.instanceId,
+        (item) =>
+          item.instanceId === command.instanceId && !item.hostInstanceId,
       );
       if (!owned) return reject(state, command, "Item was not found");
       const definition = findDefinition(configuration, owned.definitionId);
       if (!definition)
         return reject(state, command, "Item definition is unavailable");
-      const amount = Math.floor((definition.basePrice ?? 0) / 2);
+      if (definition.sellable === false)
+        return reject(state, command, "Item cannot be sold");
+      const amount =
+        definition.sellPrice ??
+        policies.shopPricing.sellPrice?.({
+          basePrice: definition.basePrice ?? 0,
+          category: definition.category,
+          upgradeIds: state.inventory.upgradeIds,
+        }) ??
+        Math.floor((definition.basePrice ?? 0) / 2);
+      const removed = new Set([owned.instanceId, ...owned.attachmentIds]);
       return {
         state: {
           ...state,
@@ -906,7 +1198,7 @@ export function handle(
           inventory: {
             ...state.inventory,
             instances: state.inventory.instances.filter(
-              (item) => item.instanceId !== owned.instanceId,
+              (item) => !removed.has(item.instanceId),
             ),
           },
         },

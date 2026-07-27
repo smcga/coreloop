@@ -539,9 +539,18 @@ const utility: ContentDefinition[] = [
     category: "shop-pool",
     tags: ["shop"],
     presentation: p("Main Catalogue", "Weighted general shop catalogue."),
-    entries: poolEntries,
+    entries: [
+      ...poolEntries,
+      { definitionId: "threshold-lab:capacity-study", weight: 3 },
+      { definitionId: "threshold-lab:shop-study", weight: 2 },
+    ],
     allowDuplicates: false,
-    categories: ["passive-modifier", "consumable", "attached-modifier"],
+    categories: [
+      "passive-modifier",
+      "consumable",
+      "attached-modifier",
+      "run-upgrade",
+    ],
   },
   {
     id: "threshold-lab:six-challenge-run",

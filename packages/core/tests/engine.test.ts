@@ -212,6 +212,26 @@ describe("authoritative run policies", () => {
       policies: fourEncounterPolicies,
       content: provider(definitions),
       defaultLoadoutId: "test:loadout",
+      shopProviders: [
+        {
+          id: "test:shop",
+          version: 1,
+          poolIds: ["test:pool"],
+          getCandidates: () =>
+            definitions.map((definition) => ({
+              id: definition.id,
+              definitionId: definition.id,
+              providerId: "test:shop",
+              providerVersion: 1,
+              poolId: "test:pool",
+              category: definition.category,
+              tags: definition.tags,
+              weight: definition.weight ?? 1,
+              basePrice: definition.basePrice ?? 0,
+              acquisition: { type: "instance" },
+            })),
+        },
+      ],
     });
     let state = engine.handle(engine.createInitialState(), {
       type: "start-run",
@@ -242,6 +262,26 @@ describe("authoritative run policies", () => {
       policies: fourEncounterPolicies,
       content: provider(definitions),
       defaultLoadoutId: "test:loadout",
+      shopProviders: [
+        {
+          id: "test:shop",
+          version: 1,
+          poolIds: ["test:pool"],
+          getCandidates: () =>
+            definitions.map((definition) => ({
+              id: definition.id,
+              definitionId: definition.id,
+              providerId: "test:shop",
+              providerVersion: 1,
+              poolId: "test:pool",
+              category: definition.category,
+              tags: definition.tags,
+              weight: definition.weight ?? 1,
+              basePrice: definition.basePrice ?? 0,
+              acquisition: { type: "instance" },
+            })),
+        },
+      ],
     });
     let state = engine.handle(engine.createInitialState(), {
       type: "start-run",
