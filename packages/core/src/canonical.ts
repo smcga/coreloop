@@ -28,7 +28,10 @@ export function canonicalJson(
     else {
       const record = input as Record<string, unknown>;
       result = `{${Object.keys(record)
-        .filter((key) => !excluded.has(key))
+        // Match JSON object semantics while continuing to reject undefined in
+        // arrays and at the root. Optional TypeScript properties frequently
+        // exist as `undefined` on otherwise valid framework event objects.
+        .filter((key) => !excluded.has(key) && record[key] !== undefined)
         .sort()
         .map(
           (key) =>

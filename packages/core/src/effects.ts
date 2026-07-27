@@ -542,14 +542,14 @@ export function resolveEffects(
     events.push({
       type: "signal-received",
       signalId: signal.id,
-      source: signal.source,
+      ...(signal.source ? { source: signal.source } : {}),
     });
     if ((signal.depth ?? 0) > limits.maxDepth) {
       diagnostic({
         type: "chain-depth-exceeded",
         limit: limits.maxDepth,
         signalId: signal.id,
-        source: signal.source,
+        ...(signal.source ? { source: signal.source } : {}),
       });
       continue;
     }

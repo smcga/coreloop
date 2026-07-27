@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest run tests",
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
     "@core-loop/core": "0.1.0",
