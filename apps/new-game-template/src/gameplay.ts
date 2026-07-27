@@ -65,6 +65,12 @@ export const choiceModule: GameplayModule<ChoiceState, ChoiceAction> = {
     };
   },
   isComplete: (s) => s.choices.length === 3,
+  createBotStrategy: () => ({
+    nextAction: (state) => ({
+      type: "choose",
+      index: state.options.indexOf(Math.max(...state.options)),
+    }),
+  }),
   validateState(value) {
     if (!value || typeof value !== "object")
       throw new Error("Invalid choice state");
