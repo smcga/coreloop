@@ -11,8 +11,16 @@ import {
   type ScoreLedgerEntry,
 } from "./effects";
 import type { GameplaySessionState, RuleReference } from "./gameplay";
+import { FrameworkError } from "./errors";
+import {
+  defaultPolicies,
+  policyReferences,
+  type EncounterScheduleEntry,
+  type PolicyReference,
+  type RunPolicyKey,
+  type RunPolicySet,
+} from "./policies";
 
-export const ENCOUNTER_COUNT = 6;
 export const CONTENT_VERSION = 3;
 export type Rarity = string;
 export type ItemCategory = "modifier" | "consumable";
@@ -31,18 +39,9 @@ export interface ItemDefinition {
     | { readonly type: "custom"; readonly handler: RuleReference };
 }
 export interface RunConfiguration {
+  readonly policies?: RunPolicySet;
   readonly definitions?: readonly ItemDefinition[];
   readonly initialItems?: readonly string[];
-  rulesForEncounter?(
-    encounterNumber: number,
-    moduleId: string,
-  ): readonly RuleReference[];
-  targetForEncounter?(encounterNumber: number): number;
-  rewardForEncounter?(
-    encounterNumber: number,
-    score: number,
-    target: number,
-  ): number;
 }
 export interface OwnedItem {
   readonly instanceId: string;
@@ -108,6 +107,9 @@ export interface RunState {
   readonly seed: number | null;
   readonly rng: RandomState;
   readonly encounterNumber: number;
+  readonly schedule: readonly EncounterScheduleEntry[];
+  readonly schedulePosition: number;
+  readonly policyReferences: Readonly<Record<RunPolicyKey, PolicyReference>>;
   readonly currentEncounter: EncounterBrief | null;
   readonly currency: number;
   readonly inventory: Inventory;
@@ -213,6 +215,7 @@ export function definitionFor(
   return findDefinition(configuration, id);
 }
 const initialInventory = (configuration: RunConfiguration): Inventory => {
+  const policies = configuration.policies ?? defaultPolicies;
   let next = 1;
   const items = (configuration.initialItems ?? []).flatMap(
     (definitionId): OwnedItem[] =>
@@ -238,8 +241,8 @@ const initialInventory = (configuration: RunConfiguration): Inventory => {
         findDefinition(configuration, item.definitionId)?.category ===
         "consumable",
     ),
-    modifierCapacity: 4,
-    consumableCapacity: 2,
+    modifierCapacity: policies.inventory.limitFor("modifier"),
+    consumableCapacity: policies.inventory.limitFor("consumable"),
   };
 };
 export function createInitialRunState(
@@ -251,6 +254,11 @@ export function createInitialRunState(
     seed: null,
     rng: createRandom(0),
     encounterNumber: 0,
+    schedule: [],
+    schedulePosition: -1,
+    policyReferences: policyReferences(
+      configuration.policies ?? defaultPolicies,
+    ),
     currentEncounter: null,
     currency: 0,
     inventory,
@@ -266,22 +274,18 @@ export function createInitialRunState(
     encounterEffects: [],
   };
 }
-export function targetForEncounter(number: number): number {
-  return 25 + number * 4;
-}
 function prepareEncounter(
   state: RandomState,
-  number: number,
-  moduleId: string,
+  entry: EncounterScheduleEntry,
   configuration: RunConfiguration,
 ) {
+  const policies = configuration.policies ?? defaultPolicies;
   const derived = nextUint32(state);
   const brief: EncounterBrief = {
-    id: `encounter-${number}`,
-    number,
-    target:
-      configuration.targetForEncounter?.(number) ?? targetForEncounter(number),
-    rules: configuration.rulesForEncounter?.(number, moduleId) ?? [],
+    id: entry.id,
+    number: entry.ordinal,
+    target: policies.target.targetForEncounter({ entry, rng: state }),
+    rules: entry.rules,
     moduleSeed: derived.value,
   };
   return { rng: derived.state, brief };
@@ -305,11 +309,16 @@ function generateShop(
   state: RandomState,
   nextOfferId: number,
   configuration: RunConfiguration,
+  entry: EncounterScheduleEntry,
 ) {
+  const policies = configuration.policies ?? defaultPolicies;
   let rng = state,
     id = nextOfferId;
   const offers: ShopOffer[] = [];
-  const maximum = Math.min(3, definitionsOf(configuration).length);
+  const maximum = Math.min(
+    policies.shopGeneration.offerCount({ entry }),
+    definitionsOf(configuration).length,
+  );
   let attempts = 0;
   while (offers.length < maximum && attempts++ < 100) {
     const choice = weightedDefinition(rng, configuration);
@@ -323,7 +332,11 @@ function generateShop(
       id: `offer-${id++}`,
       definitionId: choice.definition.id,
       category: choice.definition.category,
-      price: choice.definition.basePrice,
+      price: policies.shopPricing.offerPrice({
+        basePrice: choice.definition.basePrice,
+        category: choice.definition.category,
+        entry,
+      }),
     });
   }
   return { rng, offers, nextOfferId: id };
@@ -485,9 +498,18 @@ function resolveScore(
     ledger,
   };
 }
-export function createRunEngine(
-  configuration: RunConfiguration = EMPTY_CONFIGURATION,
-) {
+export function createRunEngine(configuration: RunConfiguration) {
+  if (!configuration.policies)
+    throw new FrameworkError(
+      "invalid-policy",
+      "createRunEngine requires an explicit policy set",
+    );
+  const references = Object.values(policyReferences(configuration.policies));
+  if (new Set(references.map(({ id }) => id)).size !== references.length)
+    throw new FrameworkError(
+      "duplicate-id",
+      "Each run policy role requires a distinct policy",
+    );
   const handleConfigured = (
     state: Readonly<RunState>,
     command: RunCommand,
@@ -496,6 +518,7 @@ export function createRunEngine(
     createInitialState: () => createInitialRunState(configuration),
     handle: handleConfigured,
     definitionFor: (id: string) => definitionFor(id, configuration),
+    policyReferences: policyReferences(configuration.policies),
     configuration,
   } as const;
 }
@@ -504,6 +527,7 @@ export function handle(
   command: RunCommand,
   configuration: RunConfiguration = EMPTY_CONFIGURATION,
 ): TransitionResult {
+  const policies = configuration.policies ?? defaultPolicies;
   switch (command.type) {
     case "start-run": {
       if (!Number.isSafeInteger(command.seed))
@@ -513,20 +537,45 @@ export function handle(
         return reject(state, command, "Gameplay module ID must be namespaced");
       const seed = command.seed >>> 0,
         inventory = initialInventory(configuration),
-        generated = prepareEncounter(
-          createRandom(seed),
-          1,
-          moduleId,
-          configuration,
+        initialRng = createRandom(seed),
+        schedule = policies.schedule.createSchedule({
+          seed,
+          rng: initialRng,
+          gameplayModuleId: moduleId,
+        });
+      if (
+        schedule.length === 0 ||
+        schedule.some(
+          (entry, index) =>
+            !entry.id ||
+            entry.ordinal !== index + 1 ||
+            !entry.kind ||
+            schedule.some(
+              (other, otherIndex) =>
+                otherIndex !== index && other.id === entry.id,
+            ),
+        )
+      )
+        return reject(
+          state,
+          command,
+          "Policy produced an invalid encounter schedule",
         );
+      const generated = prepareEncounter(
+        initialRng,
+        schedule[0]!,
+        configuration,
+      );
       const next = {
         ...createInitialRunState(configuration),
         phase: "encounter-ready",
         seed,
         rng: generated.rng,
-        encounterNumber: 1,
+        encounterNumber: schedule[0]!.ordinal,
+        schedule,
+        schedulePosition: 0,
         currentEncounter: generated.brief,
-        currency: 10,
+        currency: policies.start.initialCurrency({ seed }),
         inventory,
         gameplayModuleId: moduleId,
       } satisfies RunState;
@@ -595,11 +644,19 @@ export function handle(
           "A validated gameplay session is required",
         );
       const resolved = resolveScore(state, command.report, configuration);
-      if (resolved.score < resolved.target)
+      const encounterWon = resolved.score >= resolved.target;
+      const entry = state.schedule[state.schedulePosition]!;
+      const outcome = policies.outcome.evaluate({
+        entry,
+        encounterWon,
+        hasNextEncounter: state.schedulePosition + 1 < state.schedule.length,
+      });
+      if (!encounterWon) {
+        const failed = outcome === "lost";
         return {
           state: {
             ...state,
-            phase: "run-failed",
+            phase: failed ? "run-failed" : "reward",
             inventory: resolved.inventory,
             rng: resolved.rng,
             lastReport: { ...command.report, score: resolved.score },
@@ -614,17 +671,25 @@ export function handle(
               score: resolved.score,
               target: resolved.target,
             },
-            { type: "run-failed", encounterNumber: state.encounterNumber },
+            ...(failed
+              ? [
+                  {
+                    type: "run-failed" as const,
+                    encounterNumber: state.encounterNumber,
+                  },
+                ]
+              : []),
           ],
         };
-      const reward =
-        configuration.rewardForEncounter?.(
-          state.encounterNumber,
-          resolved.score,
-          resolved.target,
-        ) ?? 10 + state.encounterNumber * 2;
+      }
+      const reward = policies.reward.rewardForEncounter({
+        entry,
+        score: resolved.score,
+        target: resolved.target,
+        rng: resolved.rng,
+      });
       const total = resolved.currency + reward,
-        complete = state.encounterNumber === ENCOUNTER_COUNT;
+        complete = outcome === "won";
       return {
         state: {
           ...state,
@@ -658,8 +723,16 @@ export function handle(
           state.rng,
           state.nextOfferId,
           configuration,
+          state.schedule[state.schedulePosition]!,
         ),
-        shop = { offers: generated.offers, rerollCount: 0, rerollPrice: 5 };
+        shop = {
+          offers: generated.offers,
+          rerollCount: 0,
+          rerollPrice: policies.shopPricing.rerollPrice({
+            rerollCount: 0,
+            entry: state.schedule[state.schedulePosition]!,
+          }),
+        };
       return {
         state: {
           ...state,
@@ -681,12 +754,16 @@ export function handle(
           state.rng,
           state.nextOfferId,
           configuration,
+          state.schedule[state.schedulePosition]!,
         ),
         cost = state.shop.rerollPrice,
         shop = {
           offers: generated.offers,
           rerollCount: state.shop.rerollCount + 1,
-          rerollPrice: cost + 2,
+          rerollPrice: policies.shopPricing.rerollPrice({
+            rerollCount: state.shop.rerollCount + 1,
+            entry: state.schedule[state.schedulePosition]!,
+          }),
         };
       return {
         state: {
@@ -822,19 +899,18 @@ export function handle(
         !(command.type === "advance" && state.phase === "reward")
       )
         return reject(state, command, "An open shop is required");
-      const number = state.encounterNumber + 1,
-        generated = prepareEncounter(
-          state.rng,
-          number,
-          state.gameplayModuleId,
-          configuration,
-        );
+      const schedulePosition = state.schedulePosition + 1;
+      const entry = state.schedule[schedulePosition];
+      if (!entry)
+        return reject(state, command, "No scheduled encounter remains");
+      const generated = prepareEncounter(state.rng, entry, configuration);
       return {
         state: {
           ...state,
           phase: "encounter-ready",
           rng: generated.rng,
-          encounterNumber: number,
+          encounterNumber: entry.ordinal,
+          schedulePosition,
           currentEncounter: generated.brief,
           gameplaySession: null,
           encounterEffects: [],

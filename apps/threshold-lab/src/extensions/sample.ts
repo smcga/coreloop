@@ -4,7 +4,7 @@ import type { CustomEffectHandler, TargetPolicy } from "@core-loop/core";
 export const steepTargetPolicy: TargetPolicy = {
   id: "threshold-lab:steep-targets",
   version: 1,
-  targetForEncounter: ({ encounterNumber }) => 20 + encounterNumber * 7,
+  targetForEncounter: ({ entry }) => 20 + entry.ordinal * 7,
 };
 
 /** Adds a deterministic encounter tag through the typed effect result. */

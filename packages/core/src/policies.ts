@@ -1,44 +1,58 @@
-import type { RandomState } from "./random";
 import type { ItemCategory } from "./engine";
-import type { RuleReference } from "./gameplay";
 import { FrameworkError, requireSafeNumber } from "./errors";
+import type { RuleReference } from "./gameplay";
+import type { RandomState } from "./random";
 
 export interface PolicyReference {
   readonly id: string;
   readonly version: number;
 }
 export type VersionedPolicy = PolicyReference;
+export interface EncounterScheduleEntry {
+  readonly id: string;
+  readonly ordinal: number;
+  readonly kind: string;
+  readonly rules: readonly RuleReference[];
+}
+export interface RunStartPolicy extends VersionedPolicy {
+  initialCurrency(context: { readonly seed: number }): number;
+}
 export interface EncounterSchedulePolicy extends VersionedPolicy {
+  /** Policy RNG is an immutable snapshot. Schedule creation never advances run RNG. */
   createSchedule(context: {
     readonly seed: number;
     readonly rng: RandomState;
-  }): readonly {
-    readonly number: number;
-    readonly rules: readonly RuleReference[];
-  }[];
+    readonly gameplayModuleId: string;
+  }): readonly EncounterScheduleEntry[];
 }
 export interface TargetPolicy extends VersionedPolicy {
+  /** Policy RNG is an immutable snapshot. Target calculation never advances run RNG. */
   targetForEncounter(context: {
-    readonly encounterNumber: number;
+    readonly entry: EncounterScheduleEntry;
     readonly rng: RandomState;
   }): number;
 }
 export interface RewardPolicy extends VersionedPolicy {
+  /** Policy RNG is an immutable snapshot. Reward calculation never advances run RNG. */
   rewardForEncounter(context: {
-    readonly encounterNumber: number;
+    readonly entry: EncounterScheduleEntry;
     readonly score: number;
     readonly target: number;
     readonly rng: RandomState;
   }): number;
 }
 export interface ShopGenerationPolicy extends VersionedPolicy {
-  offerCount(context: { readonly encounterNumber: number }): number;
+  offerCount(context: { readonly entry: EncounterScheduleEntry }): number;
 }
 export interface ShopPricingPolicy extends VersionedPolicy {
-  price(context: {
+  offerPrice(context: {
     readonly basePrice: number;
-    readonly rerollCount: number;
     readonly category: ItemCategory;
+    readonly entry: EncounterScheduleEntry;
+  }): number;
+  rerollPrice(context: {
+    readonly rerollCount: number;
+    readonly entry: EncounterScheduleEntry;
   }): number;
 }
 export interface InventoryPolicy extends VersionedPolicy {
@@ -53,24 +67,27 @@ export interface ContentCompatibilityPolicy extends VersionedPolicy {
 export type RunOutcome = "won" | "lost";
 export interface RunOutcomePolicy extends VersionedPolicy {
   evaluate(context: {
-    readonly encounterNumber: number;
+    readonly entry: EncounterScheduleEntry;
     readonly encounterWon: boolean;
+    readonly hasNextEncounter: boolean;
   }): RunOutcome | null;
 }
-export type FrameworkPolicy =
-  | EncounterSchedulePolicy
-  | TargetPolicy
-  | RewardPolicy
-  | ShopGenerationPolicy
-  | ShopPricingPolicy
-  | InventoryPolicy
-  | ContentCompatibilityPolicy
-  | RunOutcomePolicy;
+export interface RunPolicySet {
+  readonly start: RunStartPolicy;
+  readonly schedule: EncounterSchedulePolicy;
+  readonly target: TargetPolicy;
+  readonly reward: RewardPolicy;
+  readonly shopGeneration: ShopGenerationPolicy;
+  readonly shopPricing: ShopPricingPolicy;
+  readonly inventory: InventoryPolicy;
+  readonly outcome: RunOutcomePolicy;
+}
+export type RunPolicyKey = keyof RunPolicySet;
 
 export class PolicyRegistry {
   private readonly values = new Map<string, VersionedPolicy>();
   constructor(policies: readonly VersionedPolicy[] = []) {
-    policies.forEach((p) => this.register(p));
+    policies.forEach((policy) => this.register(policy));
   }
   register<T extends VersionedPolicy>(policy: T): this {
     if (!/^[a-z0-9-]+:[a-z0-9-]+$/.test(policy.id))
@@ -120,60 +137,81 @@ export class PolicyRegistry {
   }
 }
 
-export const defaultPolicies = {
+export const defaultPolicies: RunPolicySet = {
+  start: { id: "core:standard-start", version: 1, initialCurrency: () => 10 },
   schedule: {
     id: "core:six-encounters",
     version: 1,
     createSchedule: () =>
       Array.from({ length: 6 }, (_, index) => ({
-        number: index + 1,
+        id: `encounter-${index + 1}`,
+        ordinal: index + 1,
+        kind: index === 5 ? "special" : "ordinary",
         rules: [],
       })),
   },
   target: {
     id: "core:linear-target",
     version: 1,
-    targetForEncounter: ({
-      encounterNumber,
-    }: {
-      readonly encounterNumber: number;
-    }) => 25 + encounterNumber * 4,
+    targetForEncounter: ({ entry }) => 25 + entry.ordinal * 4,
   },
   reward: {
     id: "core:linear-reward",
     version: 1,
-    rewardForEncounter: ({
-      encounterNumber,
-    }: {
-      readonly encounterNumber: number;
-    }) => 10 + encounterNumber * 2,
+    rewardForEncounter: ({ entry }) => 10 + entry.ordinal * 2,
   },
   shopGeneration: { id: "core:three-offers", version: 1, offerCount: () => 3 },
   shopPricing: {
     id: "core:base-pricing",
     version: 1,
-    price: ({ basePrice }: { readonly basePrice: number }) => basePrice,
+    offerPrice: ({ basePrice }) => basePrice,
+    rerollPrice: ({ rerollCount }) => 5 + rerollCount * 2,
   },
   inventory: {
     id: "core:standard-inventory",
     version: 1,
-    limitFor: (category: ItemCategory) => (category === "modifier" ? 4 : 2),
+    limitFor: (category) => (category === "modifier" ? 4 : 2),
   },
-  content: { id: "core:exact-content", version: 1, supports: () => true },
   outcome: {
     id: "core:six-win-outcome",
     version: 1,
-    evaluate: ({
-      encounterNumber,
-      encounterWon,
-    }: {
-      readonly encounterNumber: number;
-      readonly encounterWon: boolean;
-    }) =>
-      !encounterWon
-        ? ("lost" as const)
-        : encounterNumber === 6
-          ? ("won" as const)
-          : null,
+    evaluate: ({ encounterWon, hasNextEncounter }) =>
+      !encounterWon ? "lost" : hasNextEncounter ? null : "won",
   },
-} as const;
+};
+
+export function policyReferences(
+  policies: RunPolicySet,
+): Readonly<Record<RunPolicyKey, PolicyReference>> {
+  return Object.fromEntries(
+    Object.entries(policies).map(([key, { id, version }]) => [
+      key,
+      { id, version },
+    ]),
+  ) as unknown as Readonly<Record<RunPolicyKey, PolicyReference>>;
+}
+
+export function resolvePolicySet(
+  registry: PolicyRegistry,
+  references: Readonly<Record<RunPolicyKey, PolicyReference>>,
+): RunPolicySet {
+  const keys: readonly RunPolicyKey[] = [
+    "start",
+    "schedule",
+    "target",
+    "reward",
+    "shopGeneration",
+    "shopPricing",
+    "inventory",
+    "outcome",
+  ];
+  for (const key of keys)
+    if (!references[key])
+      throw new FrameworkError(
+        "invalid-policy",
+        `Missing policy reference '${key}'`,
+      );
+  return Object.fromEntries(
+    keys.map((key) => [key, registry.get(references[key])]),
+  ) as unknown as RunPolicySet;
+}
