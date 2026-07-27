@@ -80,12 +80,26 @@ describe("content-pack validation and index", () => {
     );
   });
   it("collects actionable duplicate, reference, price, weight, rarity and terminology errors", () => {
-    const first = thresholdLabContentPack.definitions[0]!;
+    const first = registry.getAs(
+      "threshold-lab:cyan-focus",
+      "passive-modifier",
+    );
     const errors = validateContentPack(
       broken({
         definitions: [
           first,
-          { ...first, basePrice: -1, rarity: "missing" as never },
+          {
+            ...first,
+            basePrice: -1,
+            rarity: "missing" as never,
+            groups: ["not-namespaced", "not-namespaced"],
+            attachmentSlots: -1,
+          },
+          {
+            ...registry.getAs("threshold-lab:red-finish", "attached-modifier"),
+            id: "threshold-lab:bad-slot",
+            slot: "not-namespaced",
+          },
           {
             ...registry.getAs("threshold-lab:main-pool", "shop-pool"),
             id: "threshold-lab:bad-pool",
@@ -93,6 +107,15 @@ describe("content-pack validation and index", () => {
           },
         ],
         terminology: [{ id: "threshold-lab:broken", terms: {} as never }],
+        rarities: [
+          ...thresholdLabContentPack.rarities,
+          {
+            id: "invalid",
+            defaultWeight: 0,
+            priceMultiplier: -1,
+            presentation: { name: "", description: "" },
+          },
+        ],
         defaultTerminologyId: "threshold-lab:broken",
       }),
     );
@@ -100,6 +123,11 @@ describe("content-pack validation and index", () => {
     expect(errors.map((e) => e.reason).join(" ")).toMatch(/unknown rarity/);
     expect(errors.map((e) => e.reason).join(" ")).toMatch(/missing referenced/);
     expect(errors.map((e) => e.path)).toContain("entries[0].weight");
+    expect(errors.map((e) => e.path)).toContain("groups");
+    expect(errors.map((e) => e.path)).toContain("attachmentSlots");
+    expect(errors.map((e) => e.path)).toContain("slot");
+    expect(errors.map((e) => e.path)).toContain("rarities[3].id");
+    expect(errors.map((e) => e.path)).toContain("rarities[3].defaultWeight");
     expect(
       errors.some((e) => e.path.includes("terminology.threshold-lab:broken")),
     ).toBe(true);
@@ -185,26 +213,48 @@ describe("instances and deterministic pools", () => {
       transformationHistory: ["threshold-lab:sequence-learner"],
     });
   });
-  it("rejects incompatible and full hosts", () => {
+  it("indexes authored groups for distinct content families", () => {
+    expect(
+      registry
+        .byGroup("threshold-lab:precision-techniques")
+        .map((definition) => definition.id),
+    ).toContain("threshold-lab:score-pulse");
+    expect(registry.byGroup("threshold-lab:volatile-techniques")).toHaveLength(
+      5,
+    );
+  });
+  it("allows layered attachments but rejects two in the same exclusive slot", () => {
     const host = createInstance(registry, "threshold-lab:object-1", {
         nextInstanceId: 1,
       }),
       a = createInstance(registry, "threshold-lab:red-finish", host.counters),
-      b = createInstance(registry, "threshold-lab:blue-finish", a.counters);
-    const attached = attach(
+      b = createInstance(registry, "threshold-lab:blue-finish", a.counters),
+      sameSlot = createInstance(
+        registry,
+        "threshold-lab:echo-finish",
+        b.counters,
+      );
+    let attached = attach(
       registry,
-      [host.instance, a.instance, b.instance],
+      [host.instance, a.instance, b.instance, sameSlot.instance],
       a.instance.instanceId,
       host.instance.instanceId,
     );
+    attached = attach(
+      registry,
+      attached,
+      b.instance.instanceId,
+      host.instance.instanceId,
+    );
+    expect(attached[0]!.attachmentIds).toEqual(["instance-2", "instance-3"]);
     expect(() =>
       attach(
         registry,
         attached,
-        b.instance.instanceId,
+        sameSlot.instance.instanceId,
         host.instance.instanceId,
       ),
-    ).toThrow(/capacity/);
+    ).toThrow(/already has an attachment/);
   });
   it("selects identically from identical RNG states and fails controlled empty pools", () => {
     const entries = registry.getAs(

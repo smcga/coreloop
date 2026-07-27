@@ -269,6 +269,11 @@ const consumables: ContentDefinition[] = consumableSpecs.map(
     id: `threshold-lab:${id}`,
     category: "consumable",
     tags: ["consumable", `operation:${operation}`],
+    groups: [
+      i % 2 === 0
+        ? "threshold-lab:precision-techniques"
+        : "threshold-lab:volatile-techniques",
+    ],
     rarity: rarity(i),
     basePrice: 5 + i,
     weight: 5,
@@ -315,6 +320,7 @@ const attachments: ContentDefinition[] = attachmentNames.map(
     weight: 4,
     presentation: p(name, description),
     hostCategories: ["playable-object", "passive-modifier"],
+    slot: `threshold-lab:${["finish", "mark", "tuning"][i % 3]}`,
     occupiesInventory: false,
     initialStoredValues: i === 4 ? { bonus: 0 } : undefined,
     triggers: [
@@ -379,6 +385,7 @@ const playable: ContentDefinition[] = [1, 2, 3, 4, 5, 6].map((value) => ({
   presentation: p(`Object ${value}`, `A base-value ${value} playable object.`),
   baseValues: { value },
   compatibleAttachmentTags: ["attachment"],
+  attachmentSlots: 3,
   gameplay: { "threshold-lab": { value } },
 }));
 const loadouts: ContentDefinition[] = [
