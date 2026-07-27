@@ -416,7 +416,10 @@ export class LabScene extends Phaser.Scene {
     this.storeTiming();
   }
 
-  private storeTiming(): void {
+  private storeTiming(
+    signals?: readonly import("@core-loop/core").ModuleGameplaySignal[],
+    actionId?: string,
+  ): void {
     if (!this.timing || !this.run.currentEncounter) return;
     this.dispatch({
       type: "store-gameplay-session",
@@ -426,6 +429,9 @@ export class LabScene extends Phaser.Scene {
         encounterId: this.run.currentEncounter.id,
         data: this.timing as unknown as import("@core-loop/core").JsonValue,
       },
+      ...(signals
+        ? { signals, ...(actionId !== undefined ? { actionId } : {}) }
+        : {}),
     });
   }
 
@@ -442,7 +448,7 @@ export class LabScene extends Phaser.Scene {
     if (!result.accepted) return;
     this.timing = result.state;
     this.feedback = `${result.state.attempts.at(-1)!.grade.toUpperCase()} · +${result.state.attempts.at(-1)!.score}`;
-    this.storeTiming();
+    this.storeTiming(result.signals, `attempt-${result.state.attempts.length}`);
     if (timingMeterModule.isComplete(this.timing)) {
       this.inputLocked = true;
       const report = timingMeterModule.createReport(this.timing, {

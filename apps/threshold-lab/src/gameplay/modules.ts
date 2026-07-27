@@ -343,7 +343,7 @@ export const timingMeterModule: GameplayModule<
       accepted: true,
       signals: [
         {
-          type: "score-contribution",
+          type: "threshold-lab:timing-attempt",
           tags,
           values: { score: result.score, position: action.position, streak },
         },
@@ -386,7 +386,7 @@ export const timingMeterModule: GameplayModule<
         firstValue: state.attempts[0]?.score ?? 0,
       },
       signals: state.attempts.map((attempt, index) => ({
-        type: "action-completed",
+        type: "threshold-lab:timing-attempt",
         sourceId: `attempt-${index + 1}`,
         tags: [attempt.grade, attempt.side],
         values: { score: attempt.score },

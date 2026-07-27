@@ -6,9 +6,14 @@ import {
 } from "./random";
 import {
   resolveEffects,
+  type EffectDiagnostic,
   type EffectDefinition,
+  type EffectRuntimeState,
+  type EffectRuntimeEvent,
+  type GameSignal,
   type ScoreLedgerEntry,
 } from "./effects";
+import { canonicalJson } from "./canonical";
 import type { GameplaySessionState, RuleReference } from "./gameplay";
 import type {
   RuntimeContentDefinition,
@@ -131,6 +136,17 @@ export interface RunState {
   readonly loadoutId: string | null;
   readonly gameplaySession: GameplaySessionState | null;
   readonly encounterEffects: readonly ContentInstance[];
+  /** Persistent inputs and counters owned by the deterministic effect transaction. */
+  readonly effects: RunEffectState;
+}
+export interface RunEffectState {
+  readonly priceModifier: number;
+  readonly allowances: Readonly<Record<string, number>>;
+  readonly encounterTags: readonly string[];
+  readonly runTags: readonly string[];
+  readonly nextSignalSequence: number;
+  readonly nextEventSequence: number;
+  readonly diagnostics: readonly EffectDiagnostic[];
 }
 export type RunCommand =
   | {
@@ -142,6 +158,9 @@ export type RunCommand =
   | {
       readonly type: "store-gameplay-session";
       readonly session: GameplaySessionState;
+      /** Accepted module action facts, in authored order. */
+      readonly actionId?: string;
+      readonly signals?: readonly GameplaySignal[];
     }
   | { readonly type: "start-encounter" }
   | { readonly type: "submit-encounter"; readonly report: EncounterReport }
@@ -158,7 +177,7 @@ export type RunCommand =
   | { readonly type: "leave-shop" }
   | { readonly type: "abandon-run" }
   | { readonly type: "advance" };
-export type RunEvent =
+type RunEventFact =
   | { readonly type: "run-started"; readonly seed: number }
   | { readonly type: "encounter-prepared"; readonly brief: EncounterBrief }
   | { readonly type: "encounter-started"; readonly encounterId: string }
@@ -221,12 +240,18 @@ export type RunEvent =
   | { readonly type: "run-completed"; readonly currency: number }
   | { readonly type: "run-failed"; readonly encounterNumber: number }
   | { readonly type: "run-abandoned" }
+  | { readonly type: "instance-expired"; readonly instanceId: string }
+  | {
+      readonly type: "effect-runtime";
+      readonly fact: EffectRuntimeEvent;
+    }
   | {
       readonly type: "command-rejected";
       readonly command: RunCommand["type"];
       readonly phase: RunPhase;
       readonly reason: string;
     };
+export type RunEvent = RunEventFact & { readonly sequence?: number };
 export interface TransitionResult {
   readonly state: RunState;
   readonly events: readonly RunEvent[];
@@ -354,6 +379,15 @@ export function createInitialRunState(
     loadoutId: null,
     gameplaySession: null,
     encounterEffects: [],
+    effects: {
+      priceModifier: 0,
+      allowances: {},
+      encounterTags: [],
+      runTags: [],
+      nextSignalSequence: 1,
+      nextEventSequence: 1,
+      diagnostics: [],
+    },
   };
 }
 function prepareEncounter(
@@ -522,16 +556,11 @@ function reject(
     ],
   };
 }
-function resolveScore(
-  state: Readonly<RunState>,
-  report: EncounterReport,
+const effectDefinitions = (
   configuration: RunConfiguration,
-) {
-  const allInstances = [
-    ...state.inventory.instances,
-    ...state.encounterEffects,
-  ];
-  const definitions: EffectDefinition[] = definitionsOf(configuration)
+  gameplayModuleId: string,
+): readonly EffectDefinition[] =>
+  definitionsOf(configuration, gameplayModuleId)
     .filter((definition) => definition.triggers)
     .map((definition) => ({
       id: definition.id,
@@ -542,76 +571,213 @@ function resolveScore(
       ],
       triggers: definition.triggers!,
     }));
-  const signal = {
-    id: `score-${state.encounterNumber}`,
-    sequence: 1,
-    type: "score",
-    tags: report.tags,
-    values: report.metrics,
-    context: {
-      encounterId: report.encounterId,
-      actionId: `action-${state.encounterNumber}`,
-      encounterNumber: state.encounterNumber,
-      special: state.currentEncounter!.rules.length > 0,
-      occurrence: {
-        chain: 1,
-        action: 1,
-        encounter: 1,
-        run: state.encounterNumber,
-      },
-    },
-  } as const;
-  const resolved = resolveEffects(
-    {
-      score: report.score,
-      target: state.currentEncounter!.target,
-      currency: state.currency,
-      priceModifier: 0,
-      rng: state.rng,
-      instances: allInstances,
-      encounterTags: state.currentEncounter!.rules.map((rule) => rule.id),
-      allowances: {},
-      nextInstanceId: state.nextInstanceId,
-    },
-    signal,
-    definitions,
+
+const validGameplaySignals = (signals: readonly GameplaySignal[]): boolean => {
+  if (signals.length > 64) return false;
+  try {
+    canonicalJson(signals);
+  } catch {
+    return false;
+  }
+  return signals.every(
+    (signal) =>
+      typeof signal.type === "string" &&
+      signal.type.length > 0 &&
+      (signal.type.includes(":") ||
+        [
+          "score",
+          "action-completed",
+          "pattern-completed",
+          "score-contribution",
+        ].includes(signal.type)) &&
+      signal.tags.every((tag) => typeof tag === "string") &&
+      Object.values(signal.values).every(Number.isFinite),
   );
-  const instances = state.inventory.instances.map((owned) => {
-    const changed = resolved.state.instances.find(
-      (item) => item.instanceId === owned.instanceId,
+};
+
+function resolveSignalBatch(
+  state: Readonly<RunState>,
+  inputs: readonly {
+    readonly type: string;
+    readonly sourceId?: string;
+    readonly tags?: readonly string[];
+    readonly values?: Readonly<Record<string, number>>;
+    readonly actionId?: string;
+  }[],
+  configuration: RunConfiguration,
+  score: number,
+  target: number,
+) {
+  let runtime: EffectRuntimeState = {
+    score,
+    target,
+    currency: state.currency,
+    priceModifier: state.effects.priceModifier,
+    rng: state.rng,
+    instances: [...state.inventory.instances, ...state.encounterEffects],
+    encounterTags: state.effects.encounterTags,
+    allowances: state.effects.allowances,
+    nextInstanceId: state.nextInstanceId,
+  };
+  let sequence = state.effects.nextSignalSequence;
+  const events: EffectRuntimeEvent[] = [],
+    ledger: ScoreLedgerEntry[] = [],
+    diagnostics: EffectDiagnostic[] = [];
+  const emitted: GameSignal[] = [];
+  for (const input of inputs) {
+    const signal: GameSignal = {
+      id: `${input.type}-${sequence}`,
+      sequence,
+      type: input.type,
+      ...(input.sourceId ? { source: { definitionId: input.sourceId } } : {}),
+      tags: input.tags ?? [],
+      values: input.values ?? {},
+      context: {
+        encounterId: state.currentEncounter?.id ?? "run",
+        ...(input.actionId ? { actionId: input.actionId } : {}),
+        encounterNumber: state.encounterNumber,
+        special: state.schedule[state.schedulePosition]?.kind === "special",
+      },
+    };
+    const result = resolveEffects(
+      runtime,
+      signal,
+      effectDefinitions(configuration, state.gameplayModuleId),
     );
-    return changed
-      ? {
-          ...owned,
-          storedValues: changed.storedValues,
-          disabled: changed.disabled,
-        }
-      : owned;
-  });
-  const events: RunEvent[] = [];
-  for (const entry of resolved.ledgerEntries)
-    if (
-      entry.source.instanceId &&
-      state.inventory.instances.some(
-        (item) => item.instanceId === entry.source.instanceId,
-      )
-    )
-      events.push({
-        type: "modifier-triggered",
-        instanceId: entry.source.instanceId,
-        label: entry.label,
-      });
-  for (const event of resolved.events)
-    if (event.type === "stored-value-changed" && event.source.instanceId)
-      events.push({
-        type: "stored-value-increased",
-        instanceId: event.source.instanceId,
-        value: event.value ?? 0,
-      });
+    runtime = result.state;
+    events.push(...result.events);
+    ledger.push(...result.ledgerEntries);
+    diagnostics.push(...result.diagnostics);
+    emitted.push(signal, ...result.emittedSignals);
+    sequence = Math.max(
+      sequence + 1,
+      ...result.emittedSignals.map((item) => item.sequence + 1),
+    );
+  }
+  const toContent = (
+    item: (typeof runtime.instances)[number],
+  ): ContentInstance => {
+    const prior = [
+      ...state.inventory.instances,
+      ...state.encounterEffects,
+    ].find((candidate) => candidate.instanceId === item.instanceId);
+    return {
+      instanceId: item.instanceId,
+      definitionId: item.definitionId,
+      storedValues: item.storedValues,
+      disabled: item.disabled,
+      destroyed: item.destroyed ?? false,
+      ...(item.expiresAfterEncounter ? { expiresAfterEncounter: true } : {}),
+      temporaryTags: item.tags ?? prior?.temporaryTags ?? [],
+      attachmentIds: prior?.attachmentIds ?? [],
+      ...(prior?.hostInstanceId
+        ? { hostInstanceId: prior.hostInstanceId }
+        : {}),
+      transformationHistory: prior?.transformationHistory ?? [],
+    };
+  };
+  const instances = runtime.instances.map(toContent);
+  const priorEncounterIds = new Set(
+    state.encounterEffects.map((item) => item.instanceId),
+  );
+  const encounterEffects = instances.filter(
+    (item) =>
+      priorEncounterIds.has(item.instanceId) || item.expiresAfterEncounter,
+  );
+  const inventoryInstances = instances.filter(
+    (item) =>
+      !encounterEffects.some((effect) => effect.instanceId === item.instanceId),
+  );
+  return {
+    runtime,
+    events,
+    ledger,
+    emitted,
+    state: {
+      ...state,
+      rng: runtime.rng,
+      currency: runtime.currency,
+      nextInstanceId: runtime.nextInstanceId,
+      inventory: { ...state.inventory, instances: inventoryInstances },
+      encounterEffects,
+      effects: {
+        ...state.effects,
+        priceModifier: runtime.priceModifier,
+        allowances: runtime.allowances,
+        encounterTags: runtime.encounterTags,
+        nextSignalSequence: sequence,
+        diagnostics: [...state.effects.diagnostics, ...diagnostics].slice(-64),
+      },
+    } satisfies RunState,
+  };
+}
+
+function resolveScore(
+  state: Readonly<RunState>,
+  report: EncounterReport,
+  configuration: RunConfiguration,
+) {
+  const inputs = [
+    ...report.signals.map((signal) => ({
+      ...signal,
+      actionId: signal.sourceId ?? `report-${state.encounterNumber}`,
+    })),
+    {
+      type: "score-calculation-started",
+      sourceId: "core:gameplay-report",
+      tags: report.tags,
+      values: { ...report.metrics, rawScore: report.score },
+      actionId: `report-${state.encounterNumber}`,
+    },
+    {
+      type: "score",
+      sourceId: "core:gameplay-report",
+      tags: report.tags,
+      values: report.metrics,
+      actionId: `report-${state.encounterNumber}`,
+    },
+  ];
+  const resolved = resolveSignalBatch(
+    state,
+    inputs,
+    configuration,
+    report.score,
+    state.currentEncounter!.target,
+  );
+  const outcomeType =
+    resolved.runtime.score >= resolved.runtime.target
+      ? "encounter-won"
+      : "encounter-lost";
+  const completed = resolveSignalBatch(
+    resolved.state,
+    [
+      {
+        type: "score-calculation-completed",
+        sourceId: "core:encounter-result",
+        values: {
+          rawScore: report.score,
+          score: resolved.runtime.score,
+          target: resolved.runtime.target,
+        },
+      },
+      {
+        type: outcomeType,
+        sourceId: "core:encounter-result",
+        values: {
+          score: resolved.runtime.score,
+          target: resolved.runtime.target,
+          margin: resolved.runtime.score - resolved.runtime.target,
+        },
+      },
+    ],
+    configuration,
+    resolved.runtime.score,
+    resolved.runtime.target,
+  );
   const base: ScoreLedgerEntry = {
     sequence: 1,
     encounterId: report.encounterId,
-    actionId: signal.context.actionId,
+    actionId: `report-${state.encounterNumber}`,
     source: { definitionId: "core:gameplay-report" },
     triggerId: "reported-score",
     operation: "base",
@@ -621,20 +787,18 @@ function resolveScore(
     amount: report.score,
     stage: "gameplay",
   };
-  const effectLedger = resolved.ledgerEntries.map((entry, index) => ({
-    ...entry,
-    sequence: index + 2,
-  }));
+  const effectLedger = [...resolved.ledger, ...completed.ledger].map(
+    (entry, index) => ({ ...entry, sequence: index + 2 }),
+  );
   const final: ScoreLedgerEntry = {
     sequence: effectLedger.length + 2,
     encounterId: report.encounterId,
-    actionId: signal.context.actionId,
     source: { definitionId: "core:encounter-result" },
     triggerId: "final-score",
     operation: "final",
     label: "Final score",
-    before: resolved.state.score,
-    after: resolved.state.score,
+    before: completed.runtime.score,
+    after: completed.runtime.score,
     stage: "post-result",
   };
   const ledger = [base, ...effectLedger, final];
@@ -654,17 +818,19 @@ function resolveScore(
         : Math.abs(entry.amount ?? entry.after),
     ...(entry.source.instanceId ? { sourceId: entry.source.instanceId } : {}),
   }));
+  const events: RunEvent[] = [...resolved.events, ...completed.events].map(
+    (fact) => ({ type: "effect-runtime", fact }),
+  );
   return {
-    score: resolved.state.score,
-    target: resolved.state.target,
-    currency: resolved.state.currency,
-    rng: resolved.state.rng,
-    inventory: { ...state.inventory, instances },
+    score: completed.runtime.score,
+    target: completed.runtime.target,
+    state: completed.state,
     events,
     lines,
     ledger,
   };
 }
+
 export function createRunEngine(configuration: RunConfiguration) {
   if (!configuration.policies)
     throw new FrameworkError(
@@ -709,7 +875,7 @@ export function createRunEngine(configuration: RunConfiguration) {
     configuration,
   } as const;
 }
-export function handle(
+function handleCommand(
   state: Readonly<RunState>,
   command: RunCommand,
   configuration: RunConfiguration = EMPTY_CONFIGURATION,
@@ -821,6 +987,31 @@ export function handle(
           command,
           "Gameplay session does not match the encounter",
         );
+      if (command.signals && !validGameplaySignals(command.signals))
+        return reject(
+          state,
+          command,
+          "Gameplay action signals must be serialisable, namespaced, finite, and within the 64-signal limit",
+        );
+      if (command.signals?.length) {
+        const resolved = resolveSignalBatch(
+          state,
+          command.signals.map((signal) => ({
+            ...signal,
+            actionId: command.actionId ?? signal.sourceId ?? "gameplay-action",
+          })),
+          configuration,
+          state.lastReport?.score ?? 0,
+          state.currentEncounter.target,
+        );
+        return {
+          state: { ...resolved.state, gameplaySession: command.session },
+          events: resolved.events.map((fact) => ({
+            type: "effect-runtime" as const,
+            fact,
+          })),
+        };
+      }
       return {
         state: { ...state, gameplaySession: command.session },
         events: [],
@@ -861,6 +1052,12 @@ export function handle(
           command,
           "A validated gameplay session is required",
         );
+      if (!validGameplaySignals(command.report.signals))
+        return reject(
+          state,
+          command,
+          "Report signals must be serialisable, namespaced, finite, and within the 64-signal limit",
+        );
       const resolved = resolveScore(state, command.report, configuration);
       const encounterWon = resolved.score >= resolved.target;
       const entry = state.schedule[state.schedulePosition]!;
@@ -873,10 +1070,8 @@ export function handle(
         const failed = outcome === "lost";
         return {
           state: {
-            ...state,
+            ...resolved.state,
             phase: failed ? "run-failed" : "reward",
-            inventory: resolved.inventory,
-            rng: resolved.rng,
             lastReport: { ...command.report, score: resolved.score },
             scoreBreakdown: resolved.lines,
             scoreLedger: resolved.ledger,
@@ -904,17 +1099,15 @@ export function handle(
         entry,
         score: resolved.score,
         target: resolved.target,
-        rng: resolved.rng,
+        rng: resolved.state.rng,
       });
-      const total = resolved.currency + reward,
+      const total = resolved.state.currency + reward,
         complete = outcome === "won";
       return {
         state: {
-          ...state,
+          ...resolved.state,
           phase: complete ? "run-complete" : "reward",
           currency: total,
-          rng: resolved.rng,
-          inventory: resolved.inventory,
           lastReport: { ...command.report, score: resolved.score },
           scoreBreakdown: resolved.lines,
           scoreLedger: resolved.ledger,
@@ -1269,12 +1462,25 @@ export function handle(
           currentEncounter: generated.brief,
           gameplaySession: null,
           encounterEffects: [],
+          effects: {
+            ...state.effects,
+            allowances: {},
+            encounterTags: [],
+          },
           shop: null,
           lastReport: null,
           scoreBreakdown: [],
           scoreLedger: [],
         },
-        events: [{ type: "encounter-prepared", brief: generated.brief }],
+        events: [
+          ...state.encounterEffects
+            .filter((item) => item.expiresAfterEncounter)
+            .map((item) => ({
+              type: "instance-expired" as const,
+              instanceId: item.instanceId,
+            })),
+          { type: "encounter-prepared", brief: generated.brief },
+        ],
       };
     }
     case "abandon-run": {
@@ -1290,4 +1496,93 @@ export function handle(
       };
     }
   }
+}
+
+/** Runs a command and then resolves its lifecycle facts through the same effect queue. */
+export function handle(
+  state: Readonly<RunState>,
+  command: RunCommand,
+  configuration: RunConfiguration = EMPTY_CONFIGURATION,
+): TransitionResult {
+  const primary = handleCommand(state, command, configuration);
+  if (
+    primary.state === state ||
+    primary.events.some((event) => event.type === "command-rejected")
+  )
+    return primary;
+  if (
+    command.type === "submit-encounter" ||
+    command.type === "store-gameplay-session"
+  )
+    return sequenceEvents(primary);
+  const signals: {
+    type: string;
+    sourceId: string;
+    values: Record<string, number>;
+  }[] = primary.events.flatMap((event) => {
+    if (
+      event.type === "effect-runtime" ||
+      event.type === "shop-candidate-rejected"
+    )
+      return [];
+    const values: Record<string, number> = {};
+    if (event.type === "currency-awarded") values.amount = event.amount;
+    if (event.type === "item-sold") values.amount = event.amount;
+    return [{ type: event.type, sourceId: "core:lifecycle", values }];
+  });
+  const currencyChange = primary.state.currency - state.currency;
+  if (currencyChange !== 0)
+    signals.push({
+      type: currencyChange > 0 ? "currency-gained" : "currency-spent",
+      sourceId: "core:economy",
+      values: { amount: Math.abs(currencyChange) },
+    });
+  if (!signals.length) return sequenceEvents(primary);
+  const priorModifier = primary.state.effects.priceModifier;
+  const resolved = resolveSignalBatch(
+    primary.state,
+    signals,
+    configuration,
+    primary.state.lastReport?.score ?? 0,
+    primary.state.currentEncounter?.target ?? 0,
+  );
+  const priceDelta = resolved.state.effects.priceModifier - priorModifier;
+  const nextState =
+    priceDelta !== 0 && resolved.state.shop
+      ? {
+          ...resolved.state,
+          shop: {
+            ...resolved.state.shop,
+            offers: resolved.state.shop.offers.map((offer) => ({
+              ...offer,
+              price: Math.max(0, Math.round(offer.price + priceDelta)),
+            })),
+          },
+        }
+      : resolved.state;
+  return sequenceEvents({
+    state: nextState,
+    events: [
+      ...primary.events,
+      ...resolved.events.map((fact) => ({
+        type: "effect-runtime" as const,
+        fact,
+      })),
+    ],
+  });
+}
+
+function sequenceEvents(result: TransitionResult): TransitionResult {
+  let sequence = result.state.effects.nextEventSequence;
+  const events = result.events.map((event) => ({
+    ...event,
+    sequence: sequence++,
+  }));
+  return {
+    state: {
+      ...result.state,
+      effects: { ...result.state.effects, nextEventSequence: sequence },
+    },
+    events,
+  };
 }
