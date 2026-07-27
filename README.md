@@ -89,6 +89,7 @@ Start with the [`documentation index`](docs/getting-started.md), or create a tex
 - [`docs/compatibility-and-replay.md`](docs/compatibility-and-replay.md) — extension policies, migrations, canonical hashes, and replay verification
 - [`docs/simulation-and-devtools.md`](docs/simulation-and-devtools.md) — simulator CLI, report schema, content browser, inspector models, and balance finding
 - [`docs/content.md`](docs/content.md) — content packs, validation, instances, attachments, rewards, and terminology
+- [`docs/garden-loop.md`](docs/garden-loop.md) — second-game composition, Garden policies/content, weather and persistence
 - [`docs/issue-1-brief.md`](docs/issue-1-brief.md) — concrete implementation brief for the first issue
 - [`docs/roadmap.md`](docs/roadmap.md) — release progression
 
