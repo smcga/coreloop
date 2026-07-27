@@ -5,7 +5,11 @@ import {
   type RunEvent,
   type RunState,
 } from "@core-loop/core";
-import { thresholdLabRunConfiguration } from "@core-loop/content";
+import {
+  ContentRegistry,
+  thresholdLabContentPack,
+  thresholdLabRunConfiguration,
+} from "@core-loop/content";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
 import {
@@ -34,6 +38,7 @@ import {
 import { advanceTimingMarker } from "../timingPresentation";
 
 const runEngine = createRunEngine(thresholdLabRunConfiguration);
+const contentRegistry = new ContentRegistry(thresholdLabContentPack);
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = runEngine.createInitialState();
@@ -663,10 +668,7 @@ export class LabScene extends Phaser.Scene {
   private renderShop(): void {
     const { width, height } = this.scale;
     const shop = this.run.shop!;
-    const owned = [
-      ...this.run.inventory.modifiers,
-      ...this.run.inventory.consumables,
-    ];
+    const owned = this.run.inventory.instances;
     const layout = computeShopLayout(width, height, {
       offerCount: shop.offers.length,
       inventoryCount: owned.length,
@@ -704,7 +706,8 @@ export class LabScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
 
     shop.offers.forEach((offer, index) => {
-      const def = runEngine.definitionFor(offer.definitionId)!;
+      const runtimeDef = runEngine.definitionFor(offer.definitionId)!;
+      const def = contentRegistry.get(offer.definitionId);
       const card = layout.offers[index]!;
       this.add
         .rectangle(
@@ -724,7 +727,7 @@ export class LabScene extends Phaser.Scene {
       this.add.text(
         card.x + padding,
         card.y + 9,
-        `${def.name}  •  ${def.rarity}`,
+        `${def.presentation.name}  •  ${runtimeDef.rarity ?? ""}`,
         {
           fontFamily: ui.font,
           fontSize: card.height < 90 ? "14px" : "16px",
@@ -734,16 +737,21 @@ export class LabScene extends Phaser.Scene {
           maxLines: 1,
         },
       );
-      this.add.text(card.x + padding, card.y + 34, def.description, {
-        fontFamily: ui.font,
-        fontSize: "12px",
-        color: palette.muted,
-        wordWrap: { width: textWidth },
-        maxLines: Math.max(
-          1,
-          Math.floor((card.height - (horizontalCard ? 48 : 84)) / 15),
-        ),
-      });
+      this.add.text(
+        card.x + padding,
+        card.y + 34,
+        def.presentation.description,
+        {
+          fontFamily: ui.font,
+          fontSize: "12px",
+          color: palette.muted,
+          wordWrap: { width: textWidth },
+          maxLines: Math.max(
+            1,
+            Math.floor((card.height - (horizontalCard ? 48 : 84)) / 15),
+          ),
+        },
+      );
       const buttonX = horizontalCard
         ? card.x + card.width - buttonWidth - padding
         : card.x + padding;
@@ -774,7 +782,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         layout.inventory.x + 6,
         layout.inventory.y + 4,
-        `BUILD ${this.run.inventory.modifiers.length}/${this.run.inventory.modifierCapacity}  •  TOOLS ${this.run.inventory.consumables.length}/${this.run.inventory.consumableCapacity}`,
+        `BUILD ${this.run.inventory.instances.filter((item) => runEngine.definitionFor(item.definitionId)?.category === "passive-modifier").length}/${this.run.inventory.capacities["passive-modifier"] ?? 0}  •  TOOLS ${this.run.inventory.instances.filter((item) => runEngine.definitionFor(item.definitionId)?.category === "consumable").length}/${this.run.inventory.capacities.consumable ?? 0}`,
         {
           fontFamily: ui.font,
           fontSize: "13px",
@@ -793,7 +801,7 @@ export class LabScene extends Phaser.Scene {
       const row = layout.inventory.height < 80 ? 0 : Math.floor(index / 2);
       const x = layout.inventory.x + 6 + column * rowWidth;
       const y = layout.inventory.y + 25 + row * 25;
-      this.add.text(x, y, def.name, {
+      this.add.text(x, y, contentRegistry.get(def.id).presentation.name, {
         fontFamily: ui.font,
         fontSize: "12px",
         color: palette.muted,
@@ -844,13 +852,16 @@ export class LabScene extends Phaser.Scene {
   }
 
   private useOrStart(): void {
-    const consumable = this.run.inventory.consumables[0];
+    const consumable = this.run.inventory.instances.find(
+      (item) =>
+        runEngine.definitionFor(item.definitionId)?.category === "consumable",
+    );
     if (consumable) {
       this.dispatch({
         type: "use-consumable",
         instanceId: consumable.instanceId,
       });
-      this.feedback = `Used ${runEngine.definitionFor(consumable.definitionId)?.name}`;
+      this.feedback = `Used ${contentRegistry.get(consumable.definitionId).presentation.name}`;
     }
     this.dispatch({ type: "start-encounter" });
     if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();

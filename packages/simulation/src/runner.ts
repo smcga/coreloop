@@ -1,7 +1,4 @@
-import {
-  thresholdLabEngineDefinitions,
-  thresholdLabRunConfiguration,
-} from "@core-loop/content";
+import { thresholdLabRunConfiguration } from "@core-loop/content";
 import {
   createRunEngine,
   type GameplayModule,
@@ -97,7 +94,7 @@ export const defaultSimulationRequest: SimulationRequest = {
   contentPackId: "threshold-lab",
   gameplayModuleId: COMBINATION_GRID_ID,
   policySetId: "core:default",
-  loadoutId: "threshold-lab:balanced",
+  loadoutId: "threshold-lab:starter-balanced",
   strategyId: "balanced",
   runCount: 100,
   seedStart: 1,
@@ -143,19 +140,22 @@ export function runSimulation(
     specialFailures: 0,
   }));
   const content = new Map<string, MutableContent>(
-    thresholdLabEngineDefinitions.map((item) => [
-      item.id,
-      {
-        eligible: 0,
-        offered: 0,
-        purchased: 0,
-        sold: 0,
-        triggered: 0,
-        scoreContribution: 0,
-        currencyContribution: 0,
-        acquiredAt: [],
-      },
-    ]),
+    thresholdLabRunConfiguration
+      .content!.listDefinitions({ gameplayModuleId: request.gameplayModuleId })
+      .filter((item) => item.weight)
+      .map((item) => [
+        item.id,
+        {
+          eligible: 0,
+          offered: 0,
+          purchased: 0,
+          sold: 0,
+          triggered: 0,
+          scoreContribution: 0,
+          currencyContribution: 0,
+          acquiredAt: [],
+        },
+      ]),
   );
   let completed = 0,
     failed = 0,
@@ -205,13 +205,13 @@ export function runSimulation(
         if (event.type === "item-sold") {
           sales++;
           content.get(
-            before.inventory.modifiers
-              .concat(before.inventory.consumables)
-              .find((x) => x.instanceId === event.instanceId)!.definitionId,
+            before.inventory.instances.find(
+              (x) => x.instanceId === event.instanceId,
+            )!.definitionId,
           )!.sold++;
         }
         if (event.type === "modifier-triggered") {
-          const owned = before.inventory.modifiers.find(
+          const owned = before.inventory.instances.find(
             (x) => x.instanceId === event.instanceId,
           );
           if (owned) content.get(owned.definitionId)!.triggered++;
@@ -225,7 +225,11 @@ export function runSimulation(
         commands < 300
       ) {
         if (state.phase === "encounter-ready") {
-          const consumable = state.inventory.consumables[0];
+          const consumable = state.inventory.instances.find(
+            (item) =>
+              runEngine.definitionFor(item.definitionId)?.category ===
+              "consumable",
+          );
           if (consumable)
             apply({
               type: "use-consumable",

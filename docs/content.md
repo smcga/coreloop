@@ -8,6 +8,8 @@ Definitions are immutable authored facts. The registry clones and deeply freezes
 
 Instances contain only run state: instance ID, definition ID, stored values, disabled/expiry state, temporary tags, attachment relationships, and transformation history. `createInstance` increments a caller-owned counter. Definitions remain outside saves. Categories are playable object, passive modifier, consumable, attached modifier, run upgrade, reward container, encounter, special encounter rule, shop pool, and starting loadout. Playable-object `gameplay` payloads are namespaced serialisable data core does not interpret.
 
+The authoritative run stores one ordered `inventory.instances` collection and category-keyed capacities. Core resolves IDs through its small `RuntimeContentProvider` interface; `createRuntimeContentProvider` adapts a validated registry while deliberately omitting presentation fields. This keeps the dependency direction `core ← content adapter ← application` and lets another package provide content without importing `@core-loop/content`. On `start-run`, the immutable loadout is resolved before any RNG is consumed; the start and inventory policies receive its economy and capacity inputs and produce the final starting state.
+
 ## Validation, availability, rarity, and pools
 
 Constructing a `ContentRegistry` validates first and throws one `ContentValidationError` containing all errors. Errors identify pack, definition/category, property path, reason, and safe offending value. Validation covers IDs, duplicates, tags, finite prices/weights, rarities, typed references, attachment hosts, transformations, loadouts, pools, terminology, trigger shapes, and custom handler IDs.
@@ -37,7 +39,7 @@ Duplication creates a fresh deterministic ID, copies stored values/history, clea
 
 Reward containers describe three interactions: a three-item catalogue choice, fixed currency cache, and targeted attachment. A host generates outcomes with run RNG and must persist explicit choices until selected/skipped; presentation never rerolls them. Pools hold stable references and weights. Four loadouts provide balanced, economy, scaling, and attachment openings. Run upgrades model non-triggering capacity and shop changes.
 
-Saves identify content pack/version, terminology, loadout, definitions, and mutable instances by stable ID. Definition bodies stay external. Missing or incompatible pack versions must reject with a restart message rather than substitute content. Migrations preserve these identities and fail explicitly when an installed pack cannot satisfy them.
+Saves identify content pack/version, terminology, loadout, definitions, and mutable instances by stable ID. Definition bodies and presentation stay external. Save format 7 migrates the former modifier/consumable arrays and encounter effects into generic instances without changing IDs, stored values, disabled state, or deterministic ordering. Missing definitions and incompatible pack versions reject explicitly rather than being discarded or substituted.
 
 ## Terminology
 

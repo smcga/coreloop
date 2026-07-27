@@ -7,10 +7,14 @@ import {
 import {
   resolveEffects,
   type EffectDefinition,
-  type EffectTrigger,
   type ScoreLedgerEntry,
 } from "./effects";
 import type { GameplaySessionState, RuleReference } from "./gameplay";
+import type {
+  RuntimeContentDefinition,
+  RuntimeContentProvider,
+  RuntimeStartingLoadout,
+} from "./content";
 import { FrameworkError } from "./errors";
 import {
   defaultPolicies,
@@ -22,43 +26,32 @@ import {
 } from "./policies";
 
 export const CONTENT_VERSION = 3;
-export type Rarity = string;
-export type ItemCategory = "modifier" | "consumable";
-
-export interface ItemDefinition {
-  readonly id: string;
-  readonly category: ItemCategory;
-  readonly name: string;
-  readonly description: string;
-  readonly rarity: Rarity;
-  readonly weight: number;
-  readonly basePrice: number;
-  readonly triggers?: readonly EffectTrigger[];
-  readonly use?:
-    | { readonly type: "encounter-effect" }
-    | { readonly type: "custom"; readonly handler: RuleReference };
-}
 export interface RunConfiguration {
   readonly policies?: RunPolicySet;
-  readonly definitions?: readonly ItemDefinition[];
-  readonly initialItems?: readonly string[];
+  readonly content?: RuntimeContentProvider;
+  readonly defaultLoadoutId?: string;
 }
-export interface OwnedItem {
+export interface ContentInstance {
   readonly instanceId: string;
   readonly definitionId: string;
   readonly storedValues: Readonly<Record<string, number>>;
   readonly disabled: boolean;
+  readonly destroyed: boolean;
+  readonly expiresAfterEncounter?: boolean;
+  readonly temporaryTags: readonly string[];
+  readonly attachmentIds: readonly string[];
+  readonly hostInstanceId?: string;
+  readonly transformationHistory: readonly string[];
 }
 export interface Inventory {
-  readonly modifiers: readonly OwnedItem[];
-  readonly consumables: readonly OwnedItem[];
-  readonly modifierCapacity: number;
-  readonly consumableCapacity: number;
+  readonly instances: readonly ContentInstance[];
+  readonly capacities: Readonly<Record<string, number>>;
+  readonly upgradeIds: readonly string[];
 }
 export interface ShopOffer {
   readonly id: string;
   readonly definitionId: string;
-  readonly category: ItemCategory;
+  readonly category: string;
   readonly price: number;
 }
 export interface ShopState {
@@ -120,14 +113,16 @@ export interface RunState {
   readonly scoreBreakdown: readonly ScoreLine[];
   readonly scoreLedger: readonly ScoreLedgerEntry[];
   readonly gameplayModuleId: string;
+  readonly loadoutId: string | null;
   readonly gameplaySession: GameplaySessionState | null;
-  readonly encounterEffects: readonly OwnedItem[];
+  readonly encounterEffects: readonly ContentInstance[];
 }
 export type RunCommand =
   | {
       readonly type: "start-run";
       readonly seed: number;
       readonly gameplayModuleId?: string;
+      readonly loadoutId?: string;
     }
   | {
       readonly type: "store-gameplay-session";
@@ -167,7 +162,7 @@ export type RunEvent =
   | {
       readonly type: "item-purchased";
       readonly offerId: string;
-      readonly instance: OwnedItem;
+      readonly instance: ContentInstance;
     }
   | {
       readonly type: "item-sold";
@@ -203,46 +198,81 @@ export interface TransitionResult {
   readonly events: readonly RunEvent[];
 }
 
-const EMPTY_CONFIGURATION: RunConfiguration = {};
-const definitionsOf = (configuration: RunConfiguration) =>
-  configuration.definitions ?? [];
-const findDefinition = (configuration: RunConfiguration, id: string) =>
-  definitionsOf(configuration).find((definition) => definition.id === id);
+const EMPTY_PROVIDER: RuntimeContentProvider = {
+  identity: { packId: "core:empty", packVersion: 1 },
+  getDefinition: (id) => {
+    throw new Error(`Unknown definition '${id}'`);
+  },
+  getStartingLoadout: (id) => ({
+    id,
+    currency: 10,
+    ownedDefinitionIds: [],
+    capacities: {},
+    upgradeIds: [],
+  }),
+  listDefinitions: () => [],
+};
+const EMPTY_CONFIGURATION: RunConfiguration = {
+  content: EMPTY_PROVIDER,
+  defaultLoadoutId: "core:empty-loadout",
+};
+const definitionsOf = (
+  configuration: RunConfiguration,
+  gameplayModuleId = "core:unselected",
+) => configuration.content?.listDefinitions({ gameplayModuleId }) ?? [];
+const findDefinition = (configuration: RunConfiguration, id: string) => {
+  try {
+    return configuration.content?.getDefinition(id);
+  } catch {
+    return undefined;
+  }
+};
 export function definitionFor(
   id: string,
   configuration: RunConfiguration = EMPTY_CONFIGURATION,
-): ItemDefinition | undefined {
+): RuntimeContentDefinition | undefined {
   return findDefinition(configuration, id);
 }
-const initialInventory = (configuration: RunConfiguration): Inventory => {
-  const policies = configuration.policies ?? defaultPolicies;
-  let next = 1;
-  const items = (configuration.initialItems ?? []).flatMap(
-    (definitionId): OwnedItem[] =>
-      findDefinition(configuration, definitionId)
-        ? [
-            {
-              instanceId: `item-${next++}`,
-              definitionId,
-              storedValues: {},
-              disabled: false,
-            },
-          ]
-        : [],
+const createInstance = (
+  definition: RuntimeContentDefinition,
+  number: number,
+): ContentInstance => ({
+  instanceId: `item-${number}`,
+  definitionId: definition.id,
+  storedValues: definition.initialStoredValues ?? {},
+  disabled: false,
+  destroyed: false,
+  temporaryTags: [],
+  attachmentIds: [],
+  transformationHistory: [],
+});
+const initialInventory = (
+  configuration: RunConfiguration,
+  loadout?: RuntimeStartingLoadout,
+): Inventory => {
+  const instances = (loadout?.ownedDefinitionIds ?? []).map((id, index) => {
+    const definition = findDefinition(configuration, id);
+    if (!definition)
+      throw new FrameworkError(
+        "missing-definition",
+        `Loadout references unavailable definition '${id}'`,
+        { definitionId: id },
+      );
+    return createInstance(definition, index + 1);
+  });
+  const capacities = Object.fromEntries(
+    Object.entries(loadout?.capacities ?? {}).map(([category, limit]) => [
+      category,
+      (configuration.policies ?? defaultPolicies).inventory.limitFor(
+        category,
+        limit,
+      ),
+    ]),
   );
   return {
-    modifiers: items.filter(
-      (item) =>
-        findDefinition(configuration, item.definitionId)?.category ===
-        "modifier",
-    ),
-    consumables: items.filter(
-      (item) =>
-        findDefinition(configuration, item.definitionId)?.category ===
-        "consumable",
-    ),
-    modifierCapacity: policies.inventory.limitFor("modifier"),
-    consumableCapacity: policies.inventory.limitFor("consumable"),
+    instances,
+    capacities,
+    upgradeIds: loadout?.upgradeIds ?? [],
   };
 };
 export function createInitialRunState(
@@ -263,13 +293,13 @@ export function createInitialRunState(
     currency: 0,
     inventory,
     shop: null,
-    nextInstanceId:
-      inventory.modifiers.length + inventory.consumables.length + 1,
+    nextInstanceId: 1,
     nextOfferId: 1,
     lastReport: null,
     scoreBreakdown: [],
     scoreLedger: [],
     gameplayModuleId: "core:unselected",
+    loadoutId: null,
     gameplaySession: null,
     encounterEffects: [],
   };
@@ -293,14 +323,15 @@ function prepareEncounter(
 function weightedDefinition(
   state: RandomState,
   configuration: RunConfiguration,
+  gameplayModuleId: string,
 ) {
-  const definitions = definitionsOf(configuration);
-  const total = definitions.reduce((sum, item) => sum + item.weight, 0);
+  const definitions = definitionsOf(configuration, gameplayModuleId);
+  const total = definitions.reduce((sum, item) => sum + (item.weight ?? 0), 0);
   if (total <= 0) return { rng: state, definition: undefined };
   const roll = randomInteger(state, 1, total);
   let cursor = roll.value;
   for (const item of definitions) {
-    cursor -= item.weight;
+    cursor -= item.weight ?? 0;
     if (cursor <= 0) return { rng: roll.state, definition: item };
   }
   return { rng: roll.state, definition: definitions[0] };
@@ -310,6 +341,7 @@ function generateShop(
   nextOfferId: number,
   configuration: RunConfiguration,
   entry: EncounterScheduleEntry,
+  gameplayModuleId: string,
 ) {
   const policies = configuration.policies ?? defaultPolicies;
   let rng = state,
@@ -317,11 +349,11 @@ function generateShop(
   const offers: ShopOffer[] = [];
   const maximum = Math.min(
     policies.shopGeneration.offerCount({ entry }),
-    definitionsOf(configuration).length,
+    definitionsOf(configuration, gameplayModuleId).length,
   );
   let attempts = 0;
   while (offers.length < maximum && attempts++ < 100) {
-    const choice = weightedDefinition(rng, configuration);
+    const choice = weightedDefinition(rng, configuration, gameplayModuleId);
     rng = choice.rng;
     if (
       !choice.definition ||
@@ -333,7 +365,7 @@ function generateShop(
       definitionId: choice.definition.id,
       category: choice.definition.category,
       price: policies.shopPricing.offerPrice({
-        basePrice: choice.definition.basePrice,
+        basePrice: choice.definition.basePrice ?? 0,
         category: choice.definition.category,
         entry,
       }),
@@ -364,15 +396,18 @@ function resolveScore(
   configuration: RunConfiguration,
 ) {
   const allInstances = [
-    ...state.inventory.modifiers,
+    ...state.inventory.instances,
     ...state.encounterEffects,
   ];
   const definitions: EffectDefinition[] = definitionsOf(configuration)
     .filter((definition) => definition.triggers)
     .map((definition) => ({
       id: definition.id,
-      label: definition.name,
-      tags: [definition.category, definition.rarity],
+      label: definition.id,
+      tags: [
+        definition.category,
+        ...(definition.rarity ? [definition.rarity] : []),
+      ],
       triggers: definition.triggers!,
     }));
   const signal = {
@@ -409,7 +444,7 @@ function resolveScore(
     signal,
     definitions,
   );
-  const modifiers = state.inventory.modifiers.map((owned) => {
+  const instances = state.inventory.instances.map((owned) => {
     const changed = resolved.state.instances.find(
       (item) => item.instanceId === owned.instanceId,
     );
@@ -425,7 +460,7 @@ function resolveScore(
   for (const entry of resolved.ledgerEntries)
     if (
       entry.source.instanceId &&
-      state.inventory.modifiers.some(
+      state.inventory.instances.some(
         (item) => item.instanceId === entry.source.instanceId,
       )
     )
@@ -492,7 +527,7 @@ function resolveScore(
     target: resolved.state.target,
     currency: resolved.state.currency,
     rng: resolved.state.rng,
-    inventory: { ...state.inventory, modifiers },
+    inventory: { ...state.inventory, instances },
     events,
     lines,
     ledger,
@@ -535,8 +570,34 @@ export function handle(
       const moduleId = command.gameplayModuleId ?? "core:unselected";
       if (!moduleId.includes(":"))
         return reject(state, command, "Gameplay module ID must be namespaced");
+      let loadout: RuntimeStartingLoadout | undefined;
+      try {
+        const provider = configuration.content ?? EMPTY_PROVIDER;
+        const loadoutId =
+          command.loadoutId ??
+          configuration.defaultLoadoutId ??
+          "core:empty-loadout";
+        if (!loadoutId)
+          return reject(state, command, "A known starting loadout is required");
+        loadout = provider.getStartingLoadout(loadoutId);
+      } catch {
+        return reject(
+          state,
+          command,
+          "Starting loadout is unknown or incompatible",
+        );
+      }
+      let inventory: Inventory;
+      try {
+        inventory = initialInventory(configuration, loadout);
+      } catch {
+        return reject(
+          state,
+          command,
+          "Starting loadout contains unavailable content",
+        );
+      }
       const seed = command.seed >>> 0,
-        inventory = initialInventory(configuration),
         initialRng = createRandom(seed),
         schedule = policies.schedule.createSchedule({
           seed,
@@ -575,9 +636,14 @@ export function handle(
         schedule,
         schedulePosition: 0,
         currentEncounter: generated.brief,
-        currency: policies.start.initialCurrency({ seed }),
+        currency: policies.start.initialCurrency({
+          seed,
+          loadoutCurrency: loadout.currency,
+        }),
         inventory,
+        nextInstanceId: inventory.instances.length + 1,
         gameplayModuleId: moduleId,
+        loadoutId: loadout.id,
       } satisfies RunState;
       return {
         state: next,
@@ -724,6 +790,7 @@ export function handle(
           state.nextOfferId,
           configuration,
           state.schedule[state.schedulePosition]!,
+          state.gameplayModuleId,
         ),
         shop = {
           offers: generated.offers,
@@ -755,6 +822,7 @@ export function handle(
           state.nextOfferId,
           configuration,
           state.schedule[state.schedulePosition]!,
+          state.gameplayModuleId,
         ),
         cost = state.shop.rerollPrice,
         shop = {
@@ -785,28 +853,24 @@ export function handle(
       if (!offer) return reject(state, command, "Offer was not found");
       if (state.currency < offer.price)
         return reject(state, command, "Insufficient currency");
-      const list =
-          offer.category === "modifier"
-            ? state.inventory.modifiers
-            : state.inventory.consumables,
-        capacity =
-          offer.category === "modifier"
-            ? state.inventory.modifierCapacity
-            : state.inventory.consumableCapacity;
-      if (list.length >= capacity)
+      const definition = findDefinition(configuration, offer.definitionId);
+      if (!definition)
+        return reject(state, command, "Item definition is unavailable");
+      const count = state.inventory.instances.filter(
+        (item) =>
+          findDefinition(configuration, item.definitionId)?.category ===
+            offer.category &&
+          findDefinition(configuration, item.definitionId)?.occupiesCapacity,
+      ).length;
+      if (
+        definition.occupiesCapacity &&
+        count >= (state.inventory.capacities[offer.category] ?? 0)
+      )
         return reject(state, command, "Inventory is full");
-      const instance = {
-          instanceId: `item-${state.nextInstanceId}`,
-          definitionId: offer.definitionId,
-          storedValues: {},
-          disabled: false,
-        },
+      const instance = createInstance(definition, state.nextInstanceId),
         inventory = {
           ...state.inventory,
-          [offer.category === "modifier" ? "modifiers" : "consumables"]: [
-            ...list,
-            instance,
-          ],
+          instances: [...state.inventory.instances, instance],
         };
       return {
         state: {
@@ -827,25 +891,21 @@ export function handle(
     case "sell-item": {
       if (state.phase !== "shop")
         return reject(state, command, "Items can only be sold in the shop");
-      const owned = [
-        ...state.inventory.modifiers,
-        ...state.inventory.consumables,
-      ].find((item) => item.instanceId === command.instanceId);
+      const owned = state.inventory.instances.find(
+        (item) => item.instanceId === command.instanceId,
+      );
       if (!owned) return reject(state, command, "Item was not found");
       const definition = findDefinition(configuration, owned.definitionId);
       if (!definition)
         return reject(state, command, "Item definition is unavailable");
-      const amount = Math.floor(definition.basePrice / 2);
+      const amount = Math.floor((definition.basePrice ?? 0) / 2);
       return {
         state: {
           ...state,
           currency: state.currency + amount,
           inventory: {
             ...state.inventory,
-            modifiers: state.inventory.modifiers.filter(
-              (item) => item.instanceId !== owned.instanceId,
-            ),
-            consumables: state.inventory.consumables.filter(
+            instances: state.inventory.instances.filter(
               (item) => item.instanceId !== owned.instanceId,
             ),
           },
@@ -860,8 +920,11 @@ export function handle(
           command,
           "Consumables are used before an encounter starts",
         );
-      const owned = state.inventory.consumables.find(
-        (item) => item.instanceId === command.instanceId,
+      const owned = state.inventory.instances.find(
+        (item) =>
+          item.instanceId === command.instanceId &&
+          findDefinition(configuration, item.definitionId)?.category ===
+            "consumable",
       );
       if (!owned) return reject(state, command, "Consumable was not found");
       const definition = findDefinition(configuration, owned.definitionId);
@@ -876,7 +939,7 @@ export function handle(
           encounterEffects,
           inventory: {
             ...state.inventory,
-            consumables: state.inventory.consumables.filter(
+            instances: state.inventory.instances.filter(
               (item) => item.instanceId !== owned.instanceId,
             ),
           },

@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 6;
+export const SAVE_FORMAT_VERSION = 7;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -237,12 +237,56 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
         },
         run: {
           ...run,
+          loadoutId: run.loadoutId ?? null,
           schedule,
           schedulePosition: encounterNumber > 0 ? encounterNumber - 1 : -1,
           policyReferences: {
             ...defaultPolicyReferences,
             ...(isRecord(old.policies) ? old.policies : {}),
           },
+        },
+      };
+    },
+  })
+  .register({
+    fromVersion: 6,
+    toVersion: 7,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      const inventory = isRecord(run.inventory) ? run.inventory : {};
+      const modifiers = Array.isArray(inventory.modifiers)
+        ? inventory.modifiers
+        : [];
+      const consumables = Array.isArray(inventory.consumables)
+        ? inventory.consumables
+        : [];
+      const effects = Array.isArray(run.encounterEffects)
+        ? run.encounterEffects
+        : [];
+      const normalize = (value: unknown) =>
+        isRecord(value)
+          ? {
+              ...value,
+              destroyed: value.destroyed ?? false,
+              temporaryTags: value.temporaryTags ?? [],
+              attachmentIds: value.attachmentIds ?? [],
+              transformationHistory: value.transformationHistory ?? [],
+            }
+          : value;
+      return {
+        ...old,
+        formatVersion: 7,
+        run: {
+          ...run,
+          inventory: {
+            instances: [...modifiers, ...consumables].map(normalize),
+            capacities: {
+              "passive-modifier": inventory.modifierCapacity ?? 4,
+              consumable: inventory.consumableCapacity ?? 2,
+            },
+            upgradeIds: [],
+          },
+          encounterEffects: effects.map(normalize),
         },
       };
     },
@@ -271,6 +315,7 @@ export function loadSaveFile(
       { path: "$", actual: parsed },
     );
   const originalVersion = parsed.formatVersion;
+  validateLegacyDefinitions(parsed, compatibility);
   const migrated =
     originalVersion === SAVE_FORMAT_VERSION
       ? parsed
@@ -283,6 +328,41 @@ export function loadSaveFile(
         ? null
         : (originalVersion as number),
   };
+}
+
+function validateLegacyDefinitions(
+  value: Record<string, unknown>,
+  compatibility?: SaveCompatibility,
+): void {
+  if (
+    !compatibility?.definitionCategories ||
+    typeof value.formatVersion !== "number" ||
+    value.formatVersion > 6 ||
+    !isRecord(value.run) ||
+    !isRecord(value.run.inventory)
+  )
+    return;
+  const check = (items: unknown, expected: string) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!isRecord(item) || typeof item.definitionId !== "string") continue;
+      const actual = compatibility.definitionCategories!.get(item.definitionId);
+      if (!actual)
+        throw new FrameworkError(
+          "missing-definition",
+          `Definition '${item.definitionId}' is unavailable`,
+          { definitionId: item.definitionId },
+        );
+      if (actual !== expected)
+        throw new FrameworkError(
+          "incompatible-content-version",
+          `Definition '${item.definitionId}' changed category from ${expected} to ${actual}`,
+          { definitionId: item.definitionId, expected, actual },
+        );
+    }
+  };
+  check(value.run.inventory.modifiers, "passive-modifier");
+  check(value.run.inventory.consumables, "consumable");
 }
 export function parseSaveFile(text: string): SaveEnvelope | null {
   try {
@@ -330,6 +410,12 @@ function validateSave(
     maximum: 0xffffffff,
   });
   if (!Array.isArray(value.run.encounterEffects)) bad("run.encounterEffects");
+  if (
+    !isRecord(value.run.inventory) ||
+    !Array.isArray(value.run.inventory.instances) ||
+    !isRecord(value.run.inventory.capacities)
+  )
+    bad("run.inventory");
   if (
     !Array.isArray(value.run.schedule) ||
     (value.run.phase !== "idle" && value.run.schedule.length === 0)
@@ -385,6 +471,21 @@ function validateSave(
       minimum: 0,
     });
   const content = value.content as { packId: string; packVersion: number };
+  if (compatibility?.definitionCategories) {
+    for (const [index, instance] of value.run.inventory.instances.entries()) {
+      if (!isRecord(instance) || typeof instance.definitionId !== "string")
+        bad(`run.inventory.instances.${index}`);
+      const category = compatibility.definitionCategories.get(
+        instance.definitionId,
+      );
+      if (!category)
+        throw new FrameworkError(
+          "missing-definition",
+          `Definition '${instance.definitionId}' is unavailable`,
+          { definitionId: instance.definitionId },
+        );
+    }
+  }
   const gameplay = value.gameplay as {
     moduleId: string;
     moduleVersion: number;

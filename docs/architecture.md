@@ -72,6 +72,8 @@ Required rules:
 - applications compose packages and provide concrete gameplay modules.
 - game-specific modules must not become dependencies of core.
 
+Core owns only the `RuntimeContentProvider` contract, generic runtime definitions, loadouts, and serialisable instances. `packages/content` owns authored definitions and the validated registry adapter. Consequently run state contains stable definition IDs and mutable instance data, never names, descriptions, artwork, or the authored definition bodies.
+
 ## Command and event model
 
 The 0.1 lifecycle is `start-run` → `start-encounter` → `submit-encounter` → `enter-shop` → shop commands → `leave-shop`. Submission either moves immediately to run failure or awards currency; the sixth win completes the run. Invalid phase/command combinations preserve the existing state and emit a typed `command-rejected` event.

@@ -1,4 +1,3 @@
-import type { ItemCategory } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { RuleReference } from "./gameplay";
 import type { RandomState } from "./random";
@@ -15,7 +14,10 @@ export interface EncounterScheduleEntry {
   readonly rules: readonly RuleReference[];
 }
 export interface RunStartPolicy extends VersionedPolicy {
-  initialCurrency(context: { readonly seed: number }): number;
+  initialCurrency(context: {
+    readonly seed: number;
+    readonly loadoutCurrency: number;
+  }): number;
 }
 export interface EncounterSchedulePolicy extends VersionedPolicy {
   /** Policy RNG is an immutable snapshot. Schedule creation never advances run RNG. */
@@ -47,7 +49,7 @@ export interface ShopGenerationPolicy extends VersionedPolicy {
 export interface ShopPricingPolicy extends VersionedPolicy {
   offerPrice(context: {
     readonly basePrice: number;
-    readonly category: ItemCategory;
+    readonly category: string;
     readonly entry: EncounterScheduleEntry;
   }): number;
   rerollPrice(context: {
@@ -56,7 +58,7 @@ export interface ShopPricingPolicy extends VersionedPolicy {
   }): number;
 }
 export interface InventoryPolicy extends VersionedPolicy {
-  limitFor(category: ItemCategory): number;
+  limitFor(category: string, loadoutLimit: number): number;
 }
 export interface ContentCompatibilityPolicy extends VersionedPolicy {
   supports(context: {
@@ -170,7 +172,7 @@ export const defaultPolicies: RunPolicySet = {
   inventory: {
     id: "core:standard-inventory",
     version: 1,
-    limitFor: (category) => (category === "modifier" ? 4 : 2),
+    limitFor: (_category, loadoutLimit) => loadoutLimit,
   },
   outcome: {
     id: "core:six-win-outcome",

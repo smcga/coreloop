@@ -55,7 +55,7 @@ describe("development inspection view models", () => {
     expect(view.identity).toMatchObject({
       seed: 42,
       phase: "encounter-ready",
-      saveFormat: 4,
+      saveFormat: 7,
     });
     expect(view.canonicalState).not.toContain("savedAt");
     expect(developmentToolsEnabled(true, "?dev=1")).toBe(true);
