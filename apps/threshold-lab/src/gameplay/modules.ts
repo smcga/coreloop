@@ -191,6 +191,16 @@ export const combinationGridModule: GameplayModule<
       throw new Error("Invalid Combination Grid state");
     return value as unknown as CombinationGridState;
   },
+  validateAction(value) {
+    if (
+      !isRecord(value) ||
+      (value.type !== "submit" && value.type !== "toggle")
+    )
+      throw new Error("Invalid Combination Grid action");
+    if (value.type === "toggle" && typeof value.objectId !== "string")
+      throw new Error("Invalid Combination Grid toggle action");
+    return value as unknown as CombinationGridAction;
+  },
   createBotStrategy: () => ({
     nextAction: (state) =>
       state.selectedIds.length < state.selectionLimit
@@ -410,6 +420,15 @@ export const timingMeterModule: GameplayModule<
     )
       throw new Error("Invalid Timing Meter state");
     return value as unknown as TimingMeterState;
+  },
+  validateAction(value) {
+    if (
+      !isRecord(value) ||
+      value.type !== "stop" ||
+      !Number.isInteger(value.position)
+    )
+      throw new Error("Invalid Timing Meter action");
+    return value as unknown as TimingMeterAction;
   },
   createBotStrategy: () => ({
     nextAction: () => ({ type: "stop", position: 500 }),

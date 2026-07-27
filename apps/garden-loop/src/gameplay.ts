@@ -89,4 +89,16 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
     if (!v || typeof v !== "object") throw new Error("Invalid garden state");
     return v as GardenState;
   },
+  validateAction(v) {
+    if (
+      !v ||
+      typeof v !== "object" ||
+      !("type" in v) ||
+      v.type !== "plant" ||
+      !("index" in v) ||
+      !Number.isInteger(v.index)
+    )
+      throw new Error("Invalid garden action");
+    return v as GardenAction;
+  },
 };

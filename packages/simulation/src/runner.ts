@@ -1,7 +1,7 @@
 import { thresholdLabRunConfiguration } from "@core-loop/content";
 import {
   createRunEngine,
-  type GameplayModule,
+  createHeadlessRunSession,
   type RunEvent,
   type RunState,
 } from "@core-loop/core";
@@ -11,6 +11,7 @@ import {
   TIMING_METER_ID,
   combinationGridModule,
   timingMeterModule,
+  gameplayModules,
   type CombinationGridAction,
   type CombinationGridState,
   type TimingMeterAction,
@@ -89,6 +90,10 @@ type MutableContent = {
   acquiredAt: number[];
 };
 const runEngine = createRunEngine(thresholdLabRunConfiguration);
+const runSession = createHeadlessRunSession({
+  configuration: thresholdLabRunConfiguration,
+  modules: gameplayModules,
+});
 
 export const defaultSimulationRequest: SimulationRequest = {
   contentPackId: "threshold-lab",
@@ -173,7 +178,7 @@ export function runSimulation(
     outliers: { seed: number; score: number; currency: number }[] = [];
   for (let offset = 0; offset < request.runCount; offset++) {
     const seed = request.seedStart + offset;
-    let state = runEngine.handle(runEngine.createInitialState(), {
+    let state = runSession.handleCommand(runSession.createInitialState(), {
       type: "start-run",
       seed,
       gameplayModuleId: module.id,
@@ -182,7 +187,7 @@ export function runSimulation(
       runScore = 0;
     const apply = (command: Parameters<typeof runEngine.handle>[1]) => {
       const before = state;
-      const result = runEngine.handle(state, command);
+      const result = runSession.handleCommand(state, command);
       state = result.state;
       commands++;
       record(result.events, before);
@@ -236,15 +241,13 @@ export function runSimulation(
               instanceId: consumable.instanceId,
             });
           const brief = state.currentEncounter!;
-          const adapter = module as GameplayModule<object, object>;
-          const created = adapter.createEncounter({
-            encounterId: brief.id,
-            encounterNumber: brief.number,
-            target: brief.target,
-            rules: brief.rules,
-            seed: brief.moduleSeed,
-          });
-          let moduleState: object = created.state;
+          const started = apply({ type: "start-encounter" });
+          if (!state.gameplaySession)
+            throw new Error(
+              started.find((event) => event.type === "command-rejected")
+                ?.reason ?? "Gameplay session was not initialised",
+            );
+          let moduleState = module.validateState(state.gameplaySession!.data);
           const actions =
             module.id === COMBINATION_GRID_ID
               ? gridActions(moduleState as CombinationGridState)
@@ -252,31 +255,19 @@ export function runSimulation(
                   seed + brief.number,
                   (moduleState as TimingMeterState).attemptCount,
                 );
-          apply({ type: "start-encounter" });
+          let actionEvents: readonly RunEvent[] = [];
           for (const action of actions) {
-            const result = adapter.handleAction(moduleState, action, {
-              encounterId: brief.id,
-              encounterNumber: brief.number,
-            });
-            if (!result.accepted)
-              throw new Error(result.reason ?? "strategy action rejected");
-            moduleState = result.state;
+            const before = state;
+            const result = runSession.handleGameplayAction(state, action);
+            if (!result.accepted) throw new Error("strategy action rejected");
+            state = result.state;
+            record(result.events, before);
+            actionEvents = result.events;
+            if (state.gameplaySession)
+              moduleState = module.validateState(state.gameplaySession.data);
             commands++;
           }
-          apply({
-            type: "store-gameplay-session",
-            session: {
-              moduleId: module.id,
-              moduleVersion: module.version,
-              encounterId: brief.id,
-              data: moduleState as never,
-            },
-          });
-          const report = adapter.createReport(moduleState, {
-            encounterId: brief.id,
-            encounterNumber: brief.number,
-          });
-          const events = apply({ type: "submit-encounter", report });
+          const events = actionEvents;
           const row = encounterRows[brief.number - 1]!;
           const final = state.lastReport!.score;
           row.scores.push(final);

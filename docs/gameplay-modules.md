@@ -1,6 +1,8 @@
 # Gameplay modules
 
-Gameplay modules are headless adapters between a game's encounter mechanic and the reusable run. The application explicitly constructs a `GameplayModuleRegistry`; there is no import-time or global registration. A module declares a stable namespaced ID, positive version, display metadata, unique stable capabilities, deterministic encounter creation, legal action handling, progress, completion, report creation, state validation, and an optional bot strategy.
+Gameplay modules are headless adapters between a game's encounter mechanic and the reusable run. The application explicitly constructs a `GameplayModuleRegistry`; there is no import-time or global registration. A module declares a stable namespaced ID, positive version, display metadata, unique stable capabilities, deterministic encounter creation, legal action handling, progress, completion, report creation, action and state validation, and an optional bot strategy.
+
+Applications compose that registry with their configured engine through `createHeadlessRunSession`. This is the supported orchestration boundary for live play, tests, simulation, and replay: hosts call `handleCommand` for lifecycle commands and `handleGameplayAction` with untrusted input. The coordinator creates encounter state, processes signals, persists the versioned envelope, detects completion, and creates the report from the exact validated saved state. Host-authored `store-gameplay-session` and `submit-encounter` commands are rejected by this API.
 
 ```text
 Core run framework
@@ -29,7 +31,7 @@ Historical envelopes are handled by the explicit save migration graph. Current e
 
 ## Actions, signals, reports, and deterministic state
 
-`createEncounter` receives the encounter identity, number, target, compatible special-rule ID and payload, and current serialisable RNG. It returns state plus the advanced RNG. `handleAction` receives an explicit action rather than browser input. Accepted actions return new serialisable state and generic signals. `createReport` returns the same `EncounterReport` used by the run engine: final score, tags, numeric metrics, and signals. Core compares score and target; it does not calculate patterns or accuracy.
+`createEncounter` receives the encounter identity, number, target, compatible special-rule ID and payload, and a derived module seed. `validateAction` narrows browser, replay, bot, or simulation input before `handleAction` receives it. Accepted actions return new serialisable state and generic signals. `createReport` returns the same `EncounterReport` used by the run engine: final score, tags, numeric metrics, and signals. The coordinator calls `createReport` only after `isComplete` succeeds. Core compares score and target; it does not calculate patterns or accuracy.
 
 Combination Grid owns generated numbered objects, selected IDs, its selection allowance, pair/sequence/tag calculations, and grid actions. Timing Meter owns attempts, motion parameters, accuracy zones, streaks, and timing actions. Neither module imports Phaser.
 
@@ -83,8 +85,8 @@ const module: GameplayModule<{ done: boolean }, { type: "finish" }> = {
 };
 ```
 
-Register it explicitly beside the other adapters, author capability-compatible content and rules, add a Phaser presenter, and run the generic scenario harness with a bot strategy. No core or content-package import of the implementation is required.
+Register it explicitly beside the other adapters, author capability-compatible content and rules, add a Phaser presenter, and run the generic scenario harness with a bot strategy. No coordinator branch or core or content-package import of the implementation is required.
 
 ## Generic creation contract
 
-A module receives `{ encounterId, encounterNumber, target, rules, seed }`. It owns every playable object, allowance, action, threshold, and mechanic-specific modifier in its versioned JSON state. `seed` is obtained by advancing the framework RNG exactly once. Start a module RNG from the seed; never return or independently persist a second authoritative run stream. Store the completed/updated state in `GameplaySessionState` before submitting its generic `EncounterReport`.
+A module receives `{ encounterId, encounterNumber, target, rules, seed }`. It owns every playable object, allowance, action, threshold, and mechanic-specific modifier in its versioned JSON state. `seed` is obtained by advancing the framework RNG exactly once. Start a module RNG from the seed; never return or independently persist a second authoritative run stream. The coordinator, not the host, stores completed/updated state in `GameplaySessionState` and submits its generic `EncounterReport`.

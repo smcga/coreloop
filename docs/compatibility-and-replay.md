@@ -30,7 +30,7 @@ The built-in graph is `1 → 2 → 3 → 4 → 5 → 6`: historical v1 used `con
 
 Replay format **1** records seed, compatibility references, and ordered run commands/module actions. Combination Grid uses stable object IDs; Timing Meter uses the existing quantised stop position. Pointer motion, frames, terminology, and wall time are not inputs.
 
-`verifyReplay` is headless and module-neutral through a supplied executor. It applies inputs in order and compares boundary checkpoints plus final state and ordered-event hashes. First divergence reports sequence/type, expected/actual hashes, phase, module, and encounter.
+`verifyReplay` is headless and module-neutral through a supplied executor. `createSessionReplayExecutor` adapts the same live `createHeadlessRunSession` methods, so verification cannot grow a second module-orchestration path. It applies inputs in order and compares boundary checkpoints plus final state and ordered-event hashes. First divergence reports sequence/type, expected/actual hashes, phase, module, and encounter.
 
 Canonical JSON sorts object keys, preserves arrays, and rejects `undefined`, functions, non-finite numbers, and cycles. Stable text hashes use FNV-1a 32-bit (`fnv1a32:...`), for deterministic comparison rather than security. Explicit transient keys can be excluded.
 

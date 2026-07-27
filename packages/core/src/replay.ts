@@ -56,6 +56,37 @@ export interface ReplayExecutor {
     action: JsonValue,
   ): { readonly state: RunState; readonly events: readonly RunEvent[] };
 }
+/** Adapts the live coordinator without duplicating module orchestration. */
+export function createSessionReplayExecutor(session: {
+  createInitialState(): RunState;
+  handleCommand(
+    state: Readonly<RunState>,
+    command: RunCommand,
+  ): { readonly state: RunState; readonly events: readonly RunEvent[] };
+  handleGameplayAction(
+    state: Readonly<RunState>,
+    action: unknown,
+  ): { readonly state: RunState; readonly events: readonly RunEvent[] };
+}): ReplayExecutor {
+  return {
+    initialState: (seed, moduleId) =>
+      session.handleCommand(session.createInitialState(), {
+        type: "start-run",
+        seed,
+        gameplayModuleId: moduleId,
+      }).state,
+    runCommand: (state, command) => session.handleCommand(state, command),
+    gameplayAction: (state, moduleId, action) => {
+      if (state.gameplayModuleId !== moduleId)
+        throw new FrameworkError(
+          "invalid-replay-action",
+          "Replay action module does not match the run",
+          { moduleId },
+        );
+      return session.handleGameplayAction(state, action);
+    },
+  };
+}
 export interface ReplayDivergence {
   readonly sequence: number;
   readonly inputType: RecordedInput["type"] | "final";

@@ -210,12 +210,6 @@ describe.each([
         module: module as GameplayModule<unknown, unknown>,
         seed: 9876,
         actions: actions as (state: Readonly<unknown>) => readonly unknown[],
-        specialRuleFor: (number) =>
-          number === 3
-            ? `${module.id}:special-three`
-            : number === 6
-              ? `${module.id}:special-six`
-              : null,
       });
     const first = run();
     expect(first.state.phase).toBe("run-complete");
