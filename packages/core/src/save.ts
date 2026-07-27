@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 7;
+export const SAVE_FORMAT_VERSION = 8;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -290,6 +290,29 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
         },
       };
     },
+  })
+  .register({
+    fromVersion: 7,
+    toVersion: 8,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      return {
+        ...old,
+        formatVersion: 8,
+        run: {
+          ...run,
+          effects: {
+            priceModifier: 0,
+            allowances: {},
+            encounterTags: [],
+            runTags: [],
+            nextSignalSequence: 1,
+            nextEventSequence: 1,
+            diagnostics: [],
+          },
+        },
+      };
+    },
   });
 
 export function loadSaveFile(
@@ -410,6 +433,24 @@ function validateSave(
     maximum: 0xffffffff,
   });
   if (!Array.isArray(value.run.encounterEffects)) bad("run.encounterEffects");
+  if (
+    !isRecord(value.run.effects) ||
+    !isRecord(value.run.effects.allowances) ||
+    !Array.isArray(value.run.effects.encounterTags) ||
+    !Array.isArray(value.run.effects.runTags) ||
+    !Array.isArray(value.run.effects.diagnostics)
+  )
+    bad("run.effects");
+  requireSafeNumber(
+    value.run.effects.priceModifier,
+    "run.effects.priceModifier",
+    { integer: true },
+  );
+  for (const path of ["nextSignalSequence", "nextEventSequence"] as const)
+    requireSafeNumber(value.run.effects[path], `run.effects.${path}`, {
+      integer: true,
+      minimum: 1,
+    });
   if (
     !isRecord(value.run.inventory) ||
     !Array.isArray(value.run.inventory.instances) ||

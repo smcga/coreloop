@@ -1,6 +1,12 @@
 # Trigger, effect, and score-ledger runtime
 
-Core's effect runtime is a headless, serialisable interpreter. Content definitions contain typed triggers; run state contains only owned instances and stored values. Threshold Lab submits a `score` signal with gameplay tags and metrics, while core determines which owned definitions react.
+Core's effect runtime is a headless, serialisable interpreter. Content definitions contain typed triggers; run state contains owned instances, stored values, persistent effect outputs, and deterministic signal/event counters. Accepted module action signals, report signals, and framework lifecycle facts all enter the same authoritative queue.
+
+## Guaranteed signal envelope and lifecycle names
+
+Every signal has a stable ID and monotonic sequence plus its type, tags, numeric values, encounter context, optional action/source identity, depth, and retrigger metadata. Application-defined signal types must be namespaced. Core also reserves the generic gameplay capability types `score`, `action-completed`, `pattern-completed`, and `score-contribution`.
+
+Framework lifecycle signals use the matching event name, including `run-started`, `encounter-prepared`, `encounter-started`, `encounter-won`, `encounter-lost`, `currency-gained`, `currency-spent`, `shop-entered`, `shop-rerolled`, `item-purchased`, `item-sold`, `consumable-used`, `run-upgrade-applied`, `run-completed`, `run-failed`, `run-abandoned`, and `instance-expired`. Score resolution additionally guarantees `score-calculation-started`, `score`, and `score-calculation-completed`. A report's authored signals run first and in order; result signals run only after the final target and score are known.
 
 ## Resolution lifecycle and ordering
 
@@ -40,6 +46,10 @@ Signal emission creates a new sequence, increases depth, retains encounter/actio
 ## Score ledger
 
 Every score operation produces structured attribution: sequence, encounter/action, definition and instance, trigger, operation, label, before/after, additive value or rational multiplier, rounding adjustment, stage, and retrigger marker. Threshold Lab adds gameplay-base and final entries and saves only the latest encounter ledger, so save growth is bounded. Phaser formats these values; it never reconstructs them from the final score.
+
+The gameplay report's `score` is always the raw scalar score. Earlier action signals may change stored values, allowances, tags, or currency, but their score operations are not accumulated into that raw value. At completion, core resets the score boundary to the report value, processes report signals, then `score-calculation-started` and `score`; score operations at those stages apply immediately in deterministic trigger order. `NumericValue.from = "score"` therefore means the transaction's current score (raw at calculation start, then adjusted after each operation). Integer-rational multipliers floor immediately. The final target after all target operations determines win/loss. A module that emits `score-contribution` still owns folding those contributions into its raw report, so core never adds them automatically and cannot double-count them.
+
+Price modifiers, allowances, tags, instances, stored values, RNG, diagnostics, and sequence counters are copied back together with score/currency results. Encounter allowances and tags clear when advancing; temporary instances emit `instance-expired` and are removed. Rejected commands and malformed action/report signals return the original state object without advancing any counter.
 
 Scoring stages are gameplay base/pattern score, additive owned or temporary effects, multiplicative effects, encounter rules, and final result. Threshold Lab still owns tile values, pairs, sequences, matching tags, and metrics. Core owns generic reactions and the final score.
 

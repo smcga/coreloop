@@ -240,7 +240,7 @@ const passives: PassiveModifierDefinition[] = modifierSpecs.map(
             ? [
                 {
                   id: "perfect-currency",
-                  event: "result",
+                  event: "encounter-won",
                   stage: "post-result",
                   conditions: {
                     type: "compare",
