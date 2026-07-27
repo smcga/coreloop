@@ -205,36 +205,87 @@ const passives: PassiveModifierDefinition[] = modifierSpecs.map(
     attachmentSlots: i % 5 === 0 ? 2 : 1,
     initialStoredValues: strategy === "scaling" ? { bonus: 0 } : undefined,
     triggers:
-      amount > 0
+      id === "cyan-focus"
         ? [
             {
-              id: "score-effect",
+              id: "cyan-score",
               event: "score",
               stage: "additive",
               operations: [
                 {
                   type: "add-score",
-                  amount: { from: "constant", value: amount },
-                  label: name,
+                  amount: { from: "metric", key: "cyan" },
+                  factor: 10,
                 },
               ],
             },
           ]
-        : [
-            {
-              id: "score-effect",
-              event: "score",
-              stage: "multiplicative",
-              operations: [
+        : id === "pair-amplifier"
+          ? [
+              {
+                id: "amplify-pair",
+                event: "score",
+                stage: "multiplicative",
+                conditions: { type: "signal-tag", tag: "pair" },
+                operations: [
+                  {
+                    type: "multiply-score",
+                    numerator: 3,
+                    denominator: 2,
+                  },
+                ],
+              },
+            ]
+          : id === "perfect-reward"
+            ? [
                 {
-                  type: "multiply-score",
-                  numerator: 5,
-                  denominator: 4,
-                  label: name,
+                  id: "perfect-currency",
+                  event: "result",
+                  stage: "post-result",
+                  conditions: {
+                    type: "compare",
+                    left: { from: "signal", key: "margin" },
+                    comparator: "gte",
+                    right: { from: "constant", value: 20 },
+                  },
+                  operations: [
+                    {
+                      type: "currency",
+                      amount: { from: "constant", value: 5 },
+                    },
+                  ],
                 },
-              ],
-            },
-          ],
+              ]
+            : amount > 0
+              ? [
+                  {
+                    id: "score-effect",
+                    event: "score",
+                    stage: "additive",
+                    operations: [
+                      {
+                        type: "add-score",
+                        amount: { from: "constant", value: amount },
+                        label: name,
+                      },
+                    ],
+                  },
+                ]
+              : [
+                  {
+                    id: "score-effect",
+                    event: "score",
+                    stage: "multiplicative",
+                    operations: [
+                      {
+                        type: "multiply-score",
+                        numerator: 5,
+                        denominator: 4,
+                        label: name,
+                      },
+                    ],
+                  },
+                ],
   }),
 );
 const consumableSpecs = [
@@ -280,6 +331,20 @@ const consumables: ContentDefinition[] = consumableSpecs.map(
     presentation: p(name, description),
     legalPhases: ["encounter-ready", "shop"],
     operation,
+    ...(id === "score-pulse"
+      ? {
+          triggers: [
+            {
+              id: "score-pulse",
+              event: "score",
+              stage: "additive",
+              operations: [
+                { type: "add-score", amount: { from: "constant", value: 15 } },
+              ],
+            },
+          ],
+        }
+      : {}),
     targetCategories:
       operation === "attach"
         ? ["playable-object", "passive-modifier"]

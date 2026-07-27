@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attach,
   ContentRegistry,
+  createRuntimeContentProvider,
   createInstance,
   detach,
   duplicateInstance,
@@ -21,6 +22,25 @@ const broken = (change: Partial<ContentPack>): ContentPack => ({
 });
 
 describe("content-pack validation and index", () => {
+  it("adapts authored order and loadouts without leaking presentation", () => {
+    const provider = createRuntimeContentProvider(registry);
+    const definitions = provider.listDefinitions({
+      gameplayModuleId: "threshold-lab:combination-grid",
+    });
+    expect(definitions.map(({ id }) => id)).toEqual(
+      thresholdLabContentPack.definitions
+        .filter(({ category }) => category !== "starting-loadout")
+        .map(({ id }) => id),
+    );
+    expect(definitions[0]).not.toHaveProperty("presentation");
+    expect(provider.identity).toEqual({
+      packId: thresholdLabContentPack.id,
+      packVersion: thresholdLabContentPack.version,
+    });
+    expect(
+      provider.getStartingLoadout("threshold-lab:starter-balanced"),
+    ).toMatchObject({ currency: 10, capacities: { consumable: 2 } });
+  });
   it("filters definitions through declared gameplay capabilities", () => {
     const shared = registry.get("threshold-lab:steady-growth");
     const gridOnly = {

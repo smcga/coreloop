@@ -9,6 +9,7 @@ import {
   type EncounterReport,
   type RunState,
 } from "../src/index";
+import { provider } from "./provider-fixture";
 
 const MODULE = "test:first";
 function report(state: RunState, score: number): EncounterReport {
@@ -124,6 +125,21 @@ describe("generic run engine", () => {
 });
 
 describe("authoritative run policies", () => {
+  it("rejects an unknown loadout atomically before consuming RNG", () => {
+    const content = provider([]);
+    const engine = createRunEngine({ policies: defaultPolicies, content });
+    const initial = engine.createInitialState();
+    const result = engine.handle(initial, {
+      type: "start-run",
+      seed: 9,
+      gameplayModuleId: MODULE,
+      loadoutId: "test:missing",
+    });
+    expect(result.state).toBe(initial);
+    expect(result.events).toEqual([
+      expect.objectContaining({ type: "command-rejected" }),
+    ]);
+  });
   const fourEncounterPolicies = {
     ...defaultPolicies,
     start: {
@@ -174,18 +190,18 @@ describe("authoritative run policies", () => {
   const definitions = [
     {
       id: "test:item-a",
-      category: "modifier" as const,
-      name: "A",
-      description: "A",
+      category: "passive-modifier",
+      tags: [],
+      occupiesCapacity: true,
       rarity: "test",
       weight: 1,
       basePrice: 99,
     },
     {
       id: "test:item-b",
-      category: "consumable" as const,
-      name: "B",
-      description: "B",
+      category: "consumable",
+      tags: [],
+      occupiesCapacity: true,
       rarity: "test",
       weight: 1,
       basePrice: 99,
@@ -194,7 +210,8 @@ describe("authoritative run policies", () => {
   it("uses schedule, start, inventory, target, reward and outcome policies", () => {
     const engine = createRunEngine({
       policies: fourEncounterPolicies,
-      definitions,
+      content: provider(definitions),
+      defaultLoadoutId: "test:loadout",
     });
     let state = engine.handle(engine.createInitialState(), {
       type: "start-run",
@@ -204,8 +221,7 @@ describe("authoritative run policies", () => {
     expect(state.currency).toBe(37);
     expect(state.schedule).toHaveLength(4);
     expect(state.inventory).toMatchObject({
-      modifierCapacity: 1,
-      consumableCapacity: 1,
+      capacities: { "passive-modifier": 1, consumable: 1 },
     });
     for (let index = 0; index < 4; index += 1) {
       state = activateWith(engine, state);
@@ -224,7 +240,8 @@ describe("authoritative run policies", () => {
   it("uses independent offer and reroll pricing operations", () => {
     const engine = createRunEngine({
       policies: fourEncounterPolicies,
-      definitions,
+      content: provider(definitions),
+      defaultLoadoutId: "test:loadout",
     });
     let state = engine.handle(engine.createInitialState(), {
       type: "start-run",

@@ -8,6 +8,7 @@ import {
   loadSaveFile,
   type RunConfiguration,
 } from "../src";
+import { provider } from "./provider-fixture";
 
 const configuration: RunConfiguration = {
   policies: {
@@ -23,29 +24,32 @@ const configuration: RunConfiguration = {
         })),
     },
   },
-  definitions: [
-    {
-      id: "test:boost",
-      category: "consumable",
-      name: "Boost",
-      description: "Test score adjustment",
-      rarity: "test:common",
-      weight: 1,
-      basePrice: 4,
-      use: { type: "encounter-effect" },
-      triggers: [
-        {
-          id: "boost",
-          event: "score",
-          stage: "additive",
-          operations: [
-            { type: "add-score", amount: { from: "constant", value: 5 } },
-          ],
-        },
-      ],
-    },
-  ],
-  initialItems: ["test:boost"],
+  content: provider(
+    [
+      {
+        id: "test:boost",
+        category: "consumable",
+        tags: [],
+        occupiesCapacity: true,
+        rarity: "test:common",
+        weight: 1,
+        basePrice: 4,
+        use: { type: "encounter-effect" },
+        triggers: [
+          {
+            id: "boost",
+            event: "score",
+            stage: "additive",
+            operations: [
+              { type: "add-score", amount: { from: "constant", value: 5 } },
+            ],
+          },
+        ],
+      },
+    ],
+    ["test:boost"],
+  ),
+  defaultLoadoutId: "test:loadout",
 };
 
 describe("configured framework composition", () => {
@@ -58,7 +62,10 @@ describe("configured framework composition", () => {
     }).state;
     state = engine.handle(state, {
       type: "use-consumable",
-      instanceId: state.inventory.consumables[0]!.instanceId,
+      instanceId: state.inventory.instances.find(
+        (item) =>
+          engine.definitionFor(item.definitionId)?.category === "consumable",
+      )!.instanceId,
     }).state;
     state = engine.handle(state, {
       type: "store-gameplay-session",

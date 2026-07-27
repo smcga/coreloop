@@ -132,19 +132,17 @@ export function inspectorViewModel(run: RunState) {
       encounter: run.encounterNumber,
       module: run.gameplayModuleId,
       content: `${thresholdLabContentPack.id}@${thresholdLabContentPack.version}`,
-      saveFormat: 4,
+      saveFormat: 7,
     },
     encounter: run.currentEncounter,
     moduleState: run.gameplaySession?.data ?? null,
-    inventory: [...run.inventory.modifiers, ...run.inventory.consumables].map(
-      (item) => ({
-        ...item,
-        name:
-          thresholdLabContentPack.definitions.find((definition) =>
-            definition.id.endsWith(item.definitionId),
-          )?.presentation.name ?? item.definitionId,
-      }),
-    ),
+    inventory: run.inventory.instances.map((item) => ({
+      ...item,
+      name:
+        thresholdLabContentPack.definitions.find((definition) =>
+          definition.id.endsWith(item.definitionId),
+        )?.presentation.name ?? item.definitionId,
+    })),
     shop: run.shop,
     recent: { report: run.lastReport, ledger: run.scoreLedger },
     canonicalState: canonicalJson(run),
