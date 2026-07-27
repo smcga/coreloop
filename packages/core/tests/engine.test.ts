@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialRunState,
   createRandom,
-  ENCOUNTER_COUNT,
+  createRunEngine,
+  defaultPolicies,
   handle,
   nextUint32,
   type EncounterReport,
@@ -84,14 +85,13 @@ describe("generic run engine", () => {
   });
   it("completes the same lifecycle for an arbitrary module", () => {
     let state = start();
-    for (let number = 1; number <= ENCOUNTER_COUNT; number += 1) {
+    for (let number = 1; number <= 6; number += 1) {
       state = activate(state);
       state = handle(state, {
         type: "submit-encounter",
         report: report(state, 999),
       }).state;
-      if (number < ENCOUNTER_COUNT)
-        state = handle(state, { type: "advance" }).state;
+      if (number < 6) state = handle(state, { type: "advance" }).state;
     }
     expect(state.phase).toBe("run-complete");
   });
@@ -122,3 +122,170 @@ describe("generic run engine", () => {
     );
   });
 });
+
+describe("authoritative run policies", () => {
+  const fourEncounterPolicies = {
+    ...defaultPolicies,
+    start: {
+      ...defaultPolicies.start,
+      id: "test:start",
+      initialCurrency: () => 37,
+    },
+    schedule: {
+      ...defaultPolicies.schedule,
+      id: "test:four-schedule",
+      createSchedule: () =>
+        Array.from({ length: 4 }, (_, index) => ({
+          id: `round-${index + 1}`,
+          ordinal: index + 1,
+          kind: index === 3 ? "special" : "ordinary",
+          rules: index === 3 ? [{ id: "test:special", version: 2 }] : [],
+        })),
+    },
+    target: {
+      ...defaultPolicies.target,
+      id: "test:target",
+      targetForEncounter: () => 1,
+    },
+    reward: {
+      ...defaultPolicies.reward,
+      id: "test:reward",
+      rewardForEncounter: () => 3,
+    },
+    shopGeneration: {
+      ...defaultPolicies.shopGeneration,
+      id: "test:offers",
+      offerCount: () => 1,
+    },
+    shopPricing: {
+      ...defaultPolicies.shopPricing,
+      id: "test:pricing",
+      offerPrice: () => 2,
+      rerollPrice: ({ rerollCount }: { readonly rerollCount: number }) =>
+        9 + rerollCount * 4,
+    },
+    inventory: {
+      ...defaultPolicies.inventory,
+      id: "test:inventory",
+      limitFor: () => 1,
+    },
+    outcome: { ...defaultPolicies.outcome, id: "test:outcome" },
+  };
+  const definitions = [
+    {
+      id: "test:item-a",
+      category: "modifier" as const,
+      name: "A",
+      description: "A",
+      rarity: "test",
+      weight: 1,
+      basePrice: 99,
+    },
+    {
+      id: "test:item-b",
+      category: "consumable" as const,
+      name: "B",
+      description: "B",
+      rarity: "test",
+      weight: 1,
+      basePrice: 99,
+    },
+  ];
+  it("uses schedule, start, inventory, target, reward and outcome policies", () => {
+    const engine = createRunEngine({
+      policies: fourEncounterPolicies,
+      definitions,
+    });
+    let state = engine.handle(engine.createInitialState(), {
+      type: "start-run",
+      seed: 8,
+      gameplayModuleId: MODULE,
+    }).state;
+    expect(state.currency).toBe(37);
+    expect(state.schedule).toHaveLength(4);
+    expect(state.inventory).toMatchObject({
+      modifierCapacity: 1,
+      consumableCapacity: 1,
+    });
+    for (let index = 0; index < 4; index += 1) {
+      state = activateWith(engine, state);
+      state = engine.handle(state, {
+        type: "submit-encounter",
+        report: report(state, 1),
+      }).state;
+      if (index < 3) state = engine.handle(state, { type: "advance" }).state;
+    }
+    expect(state.phase).toBe("run-complete");
+    expect(state.currency).toBe(49);
+    expect(state.currentEncounter?.rules).toEqual([
+      { id: "test:special", version: 2 },
+    ]);
+  });
+  it("uses independent offer and reroll pricing operations", () => {
+    const engine = createRunEngine({
+      policies: fourEncounterPolicies,
+      definitions,
+    });
+    let state = engine.handle(engine.createInitialState(), {
+      type: "start-run",
+      seed: 3,
+      gameplayModuleId: MODULE,
+    }).state;
+    state = activateWith(engine, state);
+    state = engine.handle(state, {
+      type: "submit-encounter",
+      report: report(state, 2),
+    }).state;
+    state = engine.handle(state, { type: "enter-shop" }).state;
+    expect(state.shop).toMatchObject({ rerollPrice: 9 });
+    expect(state.shop?.offers).toHaveLength(1);
+    expect(state.shop?.offers[0]?.price).toBe(2);
+    state = engine.handle(state, { type: "reroll-shop" }).state;
+    expect(state.shop?.rerollPrice).toBe(13);
+  });
+  it("can continue after a loss when the outcome policy allows it", () => {
+    const policies = {
+      ...fourEncounterPolicies,
+      outcome: {
+        ...fourEncounterPolicies.outcome,
+        id: "test:continue-loss",
+        evaluate: ({
+          hasNextEncounter,
+        }: {
+          readonly hasNextEncounter: boolean;
+        }) => (hasNextEncounter ? null : ("won" as const)),
+      },
+    };
+    const engine = createRunEngine({ policies });
+    let state = engine.handle(engine.createInitialState(), {
+      type: "start-run",
+      seed: 1,
+      gameplayModuleId: MODULE,
+    }).state;
+    state = activateWith(engine, state);
+    state = engine.handle(state, {
+      type: "submit-encounter",
+      report: report(state, 0),
+    }).state;
+    expect(state.phase).toBe("reward");
+    expect(
+      engine.handle(state, { type: "advance" }).state.schedulePosition,
+    ).toBe(1);
+  });
+});
+
+function activateWith(
+  engine: ReturnType<typeof createRunEngine>,
+  state: RunState,
+): RunState {
+  state = engine.handle(state, {
+    type: "store-gameplay-session",
+    session: {
+      moduleId: MODULE,
+      moduleVersion: 1,
+      encounterId: state.currentEncounter!.id,
+      data: null,
+    },
+  }).state;
+  return engine.handle(state, { type: "start-encounter" }).state;
+}

@@ -49,7 +49,10 @@ describe("policies and external effects", () => {
           id: "core:linear-target",
           version: 1,
         })
-        .targetForEncounter({ encounterNumber: 6 }),
+        .targetForEncounter({
+          entry: { id: "encounter-6", ordinal: 6, kind: "special", rules: [] },
+          rng: { algorithm: "mulberry32", value: 0 },
+        }),
     ).toBe(49);
     expect(() =>
       registry.get({ id: "missing:policy", version: 1 }),
@@ -109,6 +112,27 @@ describe("versioned save migrations", () => {
       loadSaveFile(JSON.stringify(createSaveFile(createInitialRunState())))
         .migratedFrom,
     ).toBeNull());
+  it("migrates a v5 run schedule without consuming RNG", () => {
+    const current = createSaveFile(
+      handle(createInitialRunState(), {
+        type: "start-run",
+        seed: 123,
+        gameplayModuleId: "threshold-lab:combination-grid",
+      }).state,
+    );
+    const run = { ...current.run } as Record<string, unknown>;
+    delete run.schedule;
+    delete run.schedulePosition;
+    delete run.policyReferences;
+    const policies = { ...current.policies } as Record<string, unknown>;
+    delete policies.start;
+    const migrated = loadSaveFile(
+      JSON.stringify({ ...current, formatVersion: 5, policies, run }),
+    ).save;
+    expect(migrated.run.schedule).toHaveLength(6);
+    expect(migrated.run.schedulePosition).toBe(0);
+    expect(migrated.run.rng).toEqual(current.run.rng);
+  });
   it("reports corrupt, missing content, and module incompatibility", () => {
     expect(() =>
       loadSaveFile(fixture("corrupted.json"), compatibility),
@@ -190,7 +214,7 @@ describe("deterministic replay", () => {
         moduleId: "threshold-lab:combination-grid",
         moduleVersion: 1,
       },
-      policies: {},
+      run: result.state,
       customEffects: [],
       seed: 42,
       inputs: commands.map((command, i) => ({

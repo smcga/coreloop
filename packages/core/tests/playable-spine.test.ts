@@ -4,11 +4,25 @@ import { describe, expect, it } from "vitest";
 import {
   createRunEngine,
   createSaveFile,
+  defaultPolicies,
   loadSaveFile,
   type RunConfiguration,
 } from "../src";
 
 const configuration: RunConfiguration = {
+  policies: {
+    ...defaultPolicies,
+    schedule: {
+      ...defaultPolicies.schedule,
+      createSchedule: () =>
+        Array.from({ length: 6 }, (_, index) => ({
+          id: `encounter-${index + 1}`,
+          ordinal: index + 1,
+          kind: index === 2 ? "special" : "ordinary",
+          rules: index === 2 ? [{ id: "test:module-rule", version: 1 }] : [],
+        })),
+    },
+  },
   definitions: [
     {
       id: "test:boost",
@@ -32,8 +46,6 @@ const configuration: RunConfiguration = {
     },
   ],
   initialItems: ["test:boost"],
-  rulesForEncounter: (number) =>
-    number === 3 ? [{ id: "test:module-rule", version: 1 }] : [],
 };
 
 describe("configured framework composition", () => {

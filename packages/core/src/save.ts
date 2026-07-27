@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 5;
+export const SAVE_FORMAT_VERSION = 6;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -36,6 +36,7 @@ export interface SaveCompatibility {
 }
 
 const defaultPolicyReferences = {
+  start: { id: "core:standard-start", version: 1 },
   schedule: { id: "core:six-encounters", version: 1 },
   target: { id: "core:linear-target", version: 1 },
   reward: { id: "core:linear-reward", version: 1 },
@@ -65,7 +66,7 @@ export function createSaveFile(
       moduleVersion:
         run.gameplaySession?.moduleVersion ?? DEFAULT_GAMEPLAY_VERSION,
     },
-    policies: overrides.policies ?? defaultPolicyReferences,
+    policies: overrides.policies ?? run.policyReferences,
     customEffects: overrides.customEffects ?? [],
     rngVersion: RNG_VERSION,
     savedAt,
@@ -210,6 +211,41 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
         run: { ...run, encounterEffects: run.encounterEffects ?? [] },
       };
     },
+  })
+  .register({
+    fromVersion: 5,
+    toVersion: 6,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      const encounterNumber =
+        typeof run.encounterNumber === "number" ? run.encounterNumber : 0;
+      const schedule = Array.from({ length: 6 }, (_, index) => ({
+        id: `encounter-${index + 1}`,
+        ordinal: index + 1,
+        kind: index === 5 ? "special" : "ordinary",
+        rules:
+          index + 1 === encounterNumber && isRecord(run.currentEncounter)
+            ? (run.currentEncounter.rules ?? [])
+            : [],
+      }));
+      return {
+        ...old,
+        formatVersion: 6,
+        policies: {
+          ...defaultPolicyReferences,
+          ...(isRecord(old.policies) ? old.policies : {}),
+        },
+        run: {
+          ...run,
+          schedule,
+          schedulePosition: encounterNumber > 0 ? encounterNumber - 1 : -1,
+          policyReferences: {
+            ...defaultPolicyReferences,
+            ...(isRecord(old.policies) ? old.policies : {}),
+          },
+        },
+      };
+    },
   });
 
 export function loadSaveFile(
@@ -294,6 +330,50 @@ function validateSave(
     maximum: 0xffffffff,
   });
   if (!Array.isArray(value.run.encounterEffects)) bad("run.encounterEffects");
+  if (
+    !Array.isArray(value.run.schedule) ||
+    (value.run.phase !== "idle" && value.run.schedule.length === 0)
+  )
+    bad("run.schedule");
+  requireSafeNumber(value.run.schedulePosition, "run.schedulePosition", {
+    integer: true,
+    minimum: -1,
+    maximum: value.run.schedule.length - 1,
+  });
+  value.run.schedule.forEach((entry, index) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      entry.ordinal !== index + 1 ||
+      typeof entry.kind !== "string" ||
+      !Array.isArray(entry.rules)
+    )
+      bad(`run.schedule.${index}`);
+  });
+  if (!isRecord(value.policies) || !isRecord(value.run.policyReferences))
+    bad("policies");
+  if (
+    JSON.stringify(value.policies) !==
+    JSON.stringify(value.run.policyReferences)
+  )
+    bad("run.policyReferences");
+  for (const [key, reference] of Object.entries(value.policies)) {
+    if (!isRecord(reference) || typeof reference.id !== "string")
+      bad(`policies.${key}`);
+    requireSafeNumber(reference.version, `policies.${key}.version`, {
+      integer: true,
+      minimum: 1,
+    });
+    if (compatibility?.policies) {
+      const versions = compatibility.policies.get(reference.id);
+      if (!versions || !versions.includes(reference.version))
+        throw new FrameworkError(
+          "invalid-policy",
+          `Policy '${reference.id}' version ${reference.version} is unavailable`,
+          { policyId: reference.id, actual: reference.version },
+        );
+    }
+  }
   for (const path of [
     "currency",
     "encounterNumber",

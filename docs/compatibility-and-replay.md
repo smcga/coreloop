@@ -20,9 +20,9 @@ Threshold Lab's worked external examples are in `apps/threshold-lab/src/extensio
 
 ## Save envelope and migrations
 
-Save format **5** contains framework version, content pack ID/version, gameplay module ID/version, policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions.
+Save format **6** contains framework version, content pack ID/version, gameplay module ID/version, the engine's exact policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions. The complete encounter schedule and current schedule position are authoritative run state.
 
-The built-in graph is `1 → 2 → 3 → 4 → 5`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity; v5 initialises the generic per-encounter effect list. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
+The built-in graph is `1 → 2 → 3 → 4 → 5 → 6`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity; v5 initialises the generic per-encounter effect list; v6 reconstructs the historical six-entry schedule and position without consuming RNG. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
 
 `loadSaveFile` can check installed content/module versions and reports missing packs, unsupported versions, and unsafe numeric state with paths. The host may offer reset, compatible import, inspection, or return-to-menu; it never silently substitutes or deletes content.
 

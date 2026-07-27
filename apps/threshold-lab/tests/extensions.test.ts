@@ -12,7 +12,7 @@ describe("application-owned extensions", () => {
     >({ id: steepTargetPolicy.id, version: 1 });
     expect(
       policy.targetForEncounter({
-        encounterNumber: 4,
+        entry: { id: "encounter-4", ordinal: 4, kind: "ordinary", rules: [] },
         rng: { algorithm: "mulberry32", value: 9 },
       }),
     ).toBe(48);

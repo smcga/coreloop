@@ -1,4 +1,8 @@
-import type { ItemDefinition, RunConfiguration } from "@core-loop/core";
+import {
+  defaultPolicies,
+  type ItemDefinition,
+  type RunConfiguration,
+} from "@core-loop/core";
 
 /** Framework-facing catalogue for the Threshold Lab application. */
 export const thresholdLabEngineDefinitions: readonly ItemDefinition[] =
@@ -94,18 +98,33 @@ export const thresholdLabEngineDefinitions: readonly ItemDefinition[] =
   ]);
 
 export const thresholdLabRunConfiguration: RunConfiguration = {
+  policies: {
+    ...defaultPolicies,
+    schedule: {
+      ...defaultPolicies.schedule,
+      createSchedule: ({ gameplayModuleId }) =>
+        Array.from({ length: 6 }, (_, index) => {
+          const ordinal = index + 1;
+          const special = ordinal === 3 || ordinal === 6;
+          const suffix =
+            gameplayModuleId === "threshold-lab:timing-meter"
+              ? ordinal === 3
+                ? "faster-marker"
+                : "narrow-zones"
+              : ordinal === 3
+                ? "reduced-selection"
+                : "cyan-penalty";
+          return {
+            id: `encounter-${ordinal}`,
+            ordinal,
+            kind: special ? "special" : "ordinary",
+            rules: special
+              ? [{ id: `threshold-lab:${suffix}`, version: 1 }]
+              : [],
+          };
+        }),
+    },
+  },
   definitions: thresholdLabEngineDefinitions,
   initialItems: ["threshold-lab:score-pulse"],
-  rulesForEncounter: (number, moduleId) => {
-    if (number !== 3 && number !== 6) return [];
-    const suffix =
-      moduleId === "threshold-lab:timing-meter"
-        ? number === 3
-          ? "faster-marker"
-          : "narrow-zones"
-        : number === 3
-          ? "reduced-selection"
-          : "cyan-penalty";
-    return [{ id: `threshold-lab:${suffix}`, version: 1 }];
-  },
 };

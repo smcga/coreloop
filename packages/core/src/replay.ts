@@ -228,15 +228,20 @@ function divergence(
 export function createReplay(
   options: Omit<
     ReplayEnvelope,
-    "formatVersion" | "frameworkVersion" | "content" | "rngVersion"
-  > & { readonly content?: ReplayEnvelope["content"] },
+    "formatVersion" | "frameworkVersion" | "content" | "rngVersion" | "policies"
+  > & {
+    readonly content?: ReplayEnvelope["content"];
+    readonly run: Pick<RunState, "policyReferences">;
+  },
 ): ReplayEnvelope {
+  const { run, ...metadata } = options;
   return {
     formatVersion: REPLAY_FORMAT_VERSION,
     frameworkVersion: FRAMEWORK_VERSION,
     content: options.content ?? DEFAULT_CONTENT,
     rngVersion: RNG_VERSION,
-    ...options,
+    ...metadata,
+    policies: run.policyReferences,
   };
 }
 function validateReplay(value: unknown): asserts value is ReplayEnvelope {
