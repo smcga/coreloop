@@ -83,6 +83,8 @@ export interface GameplayModule<TState, TAction> {
   getProgress(state: Readonly<TState>): GameplayProgress;
   isComplete(state: Readonly<TState>): boolean;
   validateState(value: unknown): TState;
+  /** Validates untrusted browser, replay, simulation, or bot input. */
+  validateAction(value: unknown): TAction;
   createBotStrategy?(): GameplayBotStrategy<TState, TAction>;
 }
 

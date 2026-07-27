@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import {
   createRunEngine,
+  createHeadlessRunSession,
   type RunCommand,
   type RunEvent,
   type RunState,
@@ -12,13 +13,6 @@ import {
 } from "@core-loop/content";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
-import {
-  calculateScore,
-  initialSelection,
-  selectedObjects,
-  toggleObject,
-  type SelectionState,
-} from "../selection";
 import { terminology } from "../../terminology";
 import {
   computeEncounterLayout,
@@ -34,15 +28,19 @@ import {
   combinationGridModule,
   type CombinationGridState,
   type TimingMeterState,
+  gameplayModules,
 } from "../../gameplay/modules";
 import { advanceTimingMarker } from "../timingPresentation";
 
 const runEngine = createRunEngine(thresholdLabRunConfiguration);
+const runSession = createHeadlessRunSession({
+  configuration: thresholdLabRunConfiguration,
+  modules: gameplayModules,
+});
 const contentRegistry = new ContentRegistry(thresholdLabContentPack);
 
 export class LabScene extends Phaser.Scene {
   private run: RunState = runEngine.createInitialState();
-  private selection: SelectionState = initialSelection();
   private feedback = "Select up to five tiles, then submit";
   private debug = false;
   private log: string[] = [];
@@ -63,7 +61,7 @@ export class LabScene extends Phaser.Scene {
 
   create(data: { run?: RunState; moduleId?: string; seed?: number }): void {
     if (data.run) {
-      this.run = data.run;
+      this.run = runSession.validateRestoredState(data.run);
       this.feedback = "Saved run resumed";
       this.inputLocked = this.run.phase !== "encounter-active";
       if (
@@ -119,8 +117,13 @@ export class LabScene extends Phaser.Scene {
 
   private dispatch(command: RunCommand): readonly RunEvent[] {
     const before = this.run.phase;
-    const result = runEngine.handle(this.run, command);
+    const result = runSession.handleCommand(this.run, command);
     this.run = result.state;
+    this.restoreGameplayView();
+    if (command.type === "start-encounter" && this.timing) {
+      this.markerPosition = this.timing.initialDirection === 1 ? 0 : 1000;
+      this.markerDirection = this.timing.initialDirection;
+    }
     this.log.push(
       `> ${command.type}`,
       ...result.events.map((event) => `< ${event.type}`),
@@ -139,13 +142,10 @@ export class LabScene extends Phaser.Scene {
     requestedSeed?: number,
   ): void {
     const seed = requestedSeed ?? Date.now() >>> 0;
-    this.run = runEngine.createInitialState();
+    this.run = runSession.createInitialState();
     this.log = [];
     this.dispatch({ type: "start-run", seed, gameplayModuleId: moduleId });
     this.dispatch({ type: "start-encounter" });
-    if (moduleId === TIMING_METER_ID) this.initialiseTiming();
-    else this.initialiseGrid();
-    this.selection = initialSelection();
     this.feedback = gameplayInstruction(moduleId);
     this.inputLocked = false;
     this.saves.save(this.run);
@@ -168,11 +168,7 @@ export class LabScene extends Phaser.Scene {
       debugOpen: this.debug,
       resolved,
     });
-    const chosen = selectedObjects(
-      { id: brief.id, objects: grid.objects },
-      this.selection,
-    );
-    const score = calculateScore(chosen);
+    const score = combinationGridModule.getProgress(grid).score;
 
     this.textButton(
       layout.header.x,
@@ -222,7 +218,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 24,
-        `Seed ${this.run.seed}  •  Score ${score.total}  •  ${this.selection.selected.size}/${grid.selectionLimit}`,
+        `Seed ${this.run.seed}  •  Score ${score}  •  ${grid.selectedIds.length}/${grid.selectionLimit}`,
         { fontFamily: ui.font, fontSize: "13px", color: palette.text },
       )
       .setOrigin(0.5, 0);
@@ -236,7 +232,7 @@ export class LabScene extends Phaser.Scene {
             )
             ? "⚠ One fewer selection"
             : "⚠ Cyan tiles lose 5"
-          : `Base ${score.base}  •  Pair +${score.pairBonus}  •  Sequence +${score.sequenceBonus}  •  Tags +${score.matchingTagBonus}`,
+          : `Current module score ${score} • patterns and tags add bonuses`,
         {
           fontFamily: ui.font,
           fontSize: "12px",
@@ -265,7 +261,7 @@ export class LabScene extends Phaser.Scene {
       const y =
         startY +
         Math.floor(index / layout.columns) * (layout.tileSize + layout.gap);
-      const selected = this.selection.selected.has(tile.id);
+      const selected = grid.selectedIds.includes(tile.id);
       const tagColour =
         tile.tags[0] === "cyan"
           ? 0x22d3ee
@@ -314,7 +310,6 @@ export class LabScene extends Phaser.Scene {
         layout.actions.y + layout.actions.height / 2,
         "Clear",
         () => {
-          this.selection = initialSelection();
           this.feedback = "Selection cleared";
           this.render();
         },
@@ -378,84 +373,32 @@ export class LabScene extends Phaser.Scene {
       );
   }
 
-  private initialiseGrid(): void {
-    const brief = this.run.currentEncounter!;
-    const created = combinationGridModule.createEncounter({
-      encounterId: brief.id,
-      encounterNumber: brief.number,
-      target: brief.target,
-      rules: brief.rules,
-      seed: brief.moduleSeed,
-    });
-    this.grid = created.state;
-    this.dispatch({
-      type: "store-gameplay-session",
-      session: {
-        moduleId: COMBINATION_GRID_ID,
-        moduleVersion: combinationGridModule.version,
-        encounterId: brief.id,
-        data: this.grid as unknown as import("@core-loop/core").JsonValue,
-      },
-    });
-  }
-
-  private initialiseTiming(): void {
-    const brief = this.run.currentEncounter!;
-    const rules = brief.rules;
-    const created = timingMeterModule.createEncounter({
-      encounterId: brief.id,
-      encounterNumber: brief.number,
-      target: brief.target,
-      rules,
-      seed: brief.moduleSeed,
-    });
-    this.timing = created.state;
-    this.markerPosition = created.state.initialDirection === 1 ? 0 : 1000;
-    this.markerDirection = created.state.initialDirection;
-    this.feedback = gameplayInstruction(TIMING_METER_ID);
-    this.storeTiming();
-  }
-
-  private storeTiming(
-    signals?: readonly import("@core-loop/core").ModuleGameplaySignal[],
-    actionId?: string,
-  ): void {
-    if (!this.timing || !this.run.currentEncounter) return;
-    this.dispatch({
-      type: "store-gameplay-session",
-      session: {
-        moduleId: TIMING_METER_ID,
-        moduleVersion: timingMeterModule.version,
-        encounterId: this.run.currentEncounter.id,
-        data: this.timing as unknown as import("@core-loop/core").JsonValue,
-      },
-      ...(signals
-        ? { signals, ...(actionId !== undefined ? { actionId } : {}) }
-        : {}),
-    });
+  private restoreGameplayView(): void {
+    if (!this.run.gameplaySession) return;
+    if (this.run.gameplayModuleId === TIMING_METER_ID)
+      this.timing = timingMeterModule.validateState(
+        this.run.gameplaySession.data,
+      );
+    else
+      this.grid = combinationGridModule.validateState(
+        this.run.gameplaySession.data,
+      );
   }
 
   private stopTiming(): void {
     if (!this.timing || this.inputLocked) return;
-    const result = timingMeterModule.handleAction(
-      this.timing,
-      { type: "stop", position: Math.round(this.markerPosition) },
-      {
-        encounterId: this.run.currentEncounter!.id,
-        encounterNumber: this.run.encounterNumber,
-      },
-    );
+    const result = runSession.handleGameplayAction(this.run, {
+      type: "stop",
+      position: Math.round(this.markerPosition),
+    });
     if (!result.accepted) return;
-    this.timing = result.state;
-    this.feedback = `${result.state.attempts.at(-1)!.grade.toUpperCase()} · +${result.state.attempts.at(-1)!.score}`;
-    this.storeTiming(result.signals, `attempt-${result.state.attempts.length}`);
-    if (timingMeterModule.isComplete(this.timing)) {
+    this.run = result.state;
+    this.restoreGameplayView();
+    this.saves.save(this.run);
+    const attempt = this.timing!.attempts.at(-1)!;
+    this.feedback = `${attempt.grade.toUpperCase()} · +${attempt.score}`;
+    if (result.completed) {
       this.inputLocked = true;
-      const report = timingMeterModule.createReport(this.timing, {
-        encounterId: this.run.currentEncounter!.id,
-        encounterNumber: this.run.encounterNumber,
-      });
-      this.dispatch({ type: "submit-encounter", report });
     } else {
       this.markerPosition = this.timing.initialDirection === 1 ? 0 : 1000;
       this.markerDirection = this.timing.initialDirection;
@@ -626,12 +569,18 @@ export class LabScene extends Phaser.Scene {
   }
 
   private toggle(id: string): void {
-    const next = toggleObject(this.selection, id, this.grid!.selectionLimit);
-    this.feedback =
-      next === this.selection
-        ? "Limit reached — deselect a tile first"
-        : "Build patterns for visible bonuses";
-    this.selection = next;
+    const result = runSession.handleGameplayAction(this.run, {
+      type: "toggle",
+      objectId: id,
+    });
+    this.feedback = !result.accepted
+      ? "Limit reached — deselect a tile first"
+      : "Build patterns for visible bonuses";
+    if (result.accepted) {
+      this.run = result.state;
+      this.restoreGameplayView();
+      this.saves.save(this.run);
+    }
     this.render();
   }
 
@@ -639,23 +588,24 @@ export class LabScene extends Phaser.Scene {
     if (this.inputLocked || this.run.currentEncounter === null) return;
     this.inputLocked = true;
     if (!this.grid) return;
-    this.grid = {
-      ...this.grid,
-      selectedIds: [...this.selection.selected],
-      complete: true,
-    };
-    const report = combinationGridModule.createReport(this.grid, {
-      encounterId: this.run.currentEncounter.id,
-      encounterNumber: this.run.encounterNumber,
+    const target = this.run.currentEncounter.target;
+    const result = runSession.handleGameplayAction(this.run, {
+      type: "submit",
     });
-    this.log.push(`report score=${report.score}`);
-    this.dispatch({ type: "submit-encounter", report });
+    if (!result.accepted) {
+      this.inputLocked = false;
+      return;
+    }
+    this.run = result.state;
+    this.restoreGameplayView();
+    this.saves.save(this.run);
+    this.log.push(`report score=${this.run.lastReport?.score}`);
     this.feedback =
       this.run.phase === "run-failed"
-        ? `Run lost — ${this.run.lastReport?.score} fell short of ${this.run.currentEncounter.target}`
+        ? `Run lost — ${this.run.lastReport?.score} fell short of ${target}`
         : this.run.phase === "run-complete"
           ? `Run won! Final score ${this.run.lastReport?.score} • Currency ${this.run.currency}`
-          : `Encounter won! ${this.run.lastReport?.score} ≥ ${this.run.currentEncounter.target}`;
+          : `Encounter won! ${this.run.lastReport?.score} ≥ ${target}`;
     this.render();
   }
 
@@ -663,9 +613,6 @@ export class LabScene extends Phaser.Scene {
     if (this.inputLocked === false) return;
     this.dispatch({ type: "advance" });
     this.dispatch({ type: "start-encounter" });
-    if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
-    else this.initialiseGrid();
-    this.selection = initialSelection();
     this.inputLocked = false;
     this.feedback = "New encounter ready — make your selection";
     this.render();
@@ -870,9 +817,6 @@ export class LabScene extends Phaser.Scene {
       this.feedback = `Used ${contentRegistry.get(consumable.definitionId).presentation.name}`;
     }
     this.dispatch({ type: "start-encounter" });
-    if (this.run.gameplayModuleId === TIMING_METER_ID) this.initialiseTiming();
-    else this.initialiseGrid();
-    this.selection = initialSelection();
     this.inputLocked = false;
     this.render();
   }

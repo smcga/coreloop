@@ -156,6 +156,7 @@ export type RunCommand =
       readonly loadoutId?: string;
     }
   | {
+      /** @deprecated Internal coordinator command; hosts use handleGameplayAction. */
       readonly type: "store-gameplay-session";
       readonly session: GameplaySessionState;
       /** Accepted module action facts, in authored order. */
@@ -163,7 +164,11 @@ export type RunCommand =
       readonly signals?: readonly GameplaySignal[];
     }
   | { readonly type: "start-encounter" }
-  | { readonly type: "submit-encounter"; readonly report: EncounterReport }
+  | {
+      /** @deprecated Internal coordinator command; reports are module-authored. */
+      readonly type: "submit-encounter";
+      readonly report: EncounterReport;
+    }
   | { readonly type: "enter-shop" }
   | { readonly type: "buy-offer"; readonly offerId: string }
   | {

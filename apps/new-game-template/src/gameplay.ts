@@ -70,4 +70,16 @@ export const choiceModule: GameplayModule<ChoiceState, ChoiceAction> = {
       throw new Error("Invalid choice state");
     return value as ChoiceState;
   },
+  validateAction(value) {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("type" in value) ||
+      value.type !== "choose" ||
+      !("index" in value) ||
+      !Number.isInteger(value.index)
+    )
+      throw new Error("Invalid choice action");
+    return value as ChoiceAction;
+  },
 };
