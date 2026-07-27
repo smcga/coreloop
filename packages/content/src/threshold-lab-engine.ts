@@ -1,15 +1,29 @@
 import { defaultPolicies, type RunConfiguration } from "@core-loop/core";
 import { ContentRegistry } from "./registry";
-import { createRuntimeContentProvider } from "./runtime-provider";
+import {
+  createRuntimeContentProvider,
+  createShopPoolProviders,
+} from "./runtime-provider";
 import { thresholdLabContentPack } from "./threshold-lab";
 
-export const thresholdLabContentProvider = createRuntimeContentProvider(
-  new ContentRegistry(thresholdLabContentPack),
-);
+const registry = new ContentRegistry(thresholdLabContentPack);
+export const thresholdLabContentProvider =
+  createRuntimeContentProvider(registry);
 
 export const thresholdLabRunConfiguration: RunConfiguration = {
   content: thresholdLabContentProvider,
   defaultLoadoutId: "threshold-lab:starter-balanced",
+  shopProviders: createShopPoolProviders(registry),
+  gameplayCapabilities: {
+    "threshold-lab:combination-grid": ["selection"],
+    "threshold-lab:timing-meter": ["timing"],
+  },
+  rarityPriceMultipliers: Object.fromEntries(
+    thresholdLabContentPack.rarities.map((rarity) => [
+      rarity.id,
+      rarity.priceMultiplier,
+    ]),
+  ),
   policies: {
     ...defaultPolicies,
     schedule: {

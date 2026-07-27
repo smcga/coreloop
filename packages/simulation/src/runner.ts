@@ -297,7 +297,8 @@ export function runSimulation(
         else if (state.phase === "shop") {
           for (const metric of content.values()) metric.eligible++;
           for (const offer of state.shop!.offers)
-            content.get(offer.definitionId)!.offered++;
+            if (content.has(offer.definitionId))
+              content.get(offer.definitionId)!.offered++;
           const offer = [...state.shop!.offers]
             .filter((item) => item.price <= state.currency)
             .sort(

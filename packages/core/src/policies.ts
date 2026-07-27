@@ -51,6 +51,18 @@ export interface ShopPricingPolicy extends VersionedPolicy {
     readonly basePrice: number;
     readonly category: string;
     readonly entry: EncounterScheduleEntry;
+    readonly rarity?: string;
+    readonly rarityMultiplier?: number;
+    readonly providerId?: string;
+    readonly poolId?: string;
+    readonly rerollCount?: number;
+    readonly upgradeIds?: readonly string[];
+    readonly priceAdjustment?: number;
+  }): number;
+  sellPrice?(context: {
+    readonly basePrice: number;
+    readonly category: string;
+    readonly upgradeIds: readonly string[];
   }): number;
   rerollPrice(context: {
     readonly rerollCount: number;
@@ -166,8 +178,10 @@ export const defaultPolicies: RunPolicySet = {
   shopPricing: {
     id: "core:base-pricing",
     version: 1,
-    offerPrice: ({ basePrice }) => basePrice,
+    offerPrice: ({ basePrice, rarityMultiplier = 1, priceAdjustment = 0 }) =>
+      Math.max(0, Math.round(basePrice * rarityMultiplier + priceAdjustment)),
     rerollPrice: ({ rerollCount }) => 5 + rerollCount * 2,
+    sellPrice: ({ basePrice }) => Math.max(0, Math.floor(basePrice / 2)),
   },
   inventory: {
     id: "core:standard-inventory",
