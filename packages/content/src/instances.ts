@@ -63,9 +63,25 @@ export function attach(
       `${attachment.definitionId} is incompatible with ${host.definitionId}`,
     );
   const slots =
-    h.category === "passive-modifier" ? (h.attachmentSlots ?? 1) : 1;
+    h.category === "passive-modifier" || h.category === "playable-object"
+      ? (h.attachmentSlots ?? 1)
+      : 1;
   if (host.attachmentIds.length >= slots)
     throw new Error(`${host.instanceId} has no attachment capacity`);
+  if (
+    a.slot &&
+    host.attachmentIds.some((id) => {
+      const sibling = instances.find((instance) => instance.instanceId === id);
+      return (
+        sibling &&
+        registry.getAs(sibling.definitionId, "attached-modifier").slot ===
+          a.slot
+      );
+    })
+  )
+    throw new Error(
+      `${host.instanceId} already has an attachment in ${a.slot}`,
+    );
   return instances.map((i) =>
     i.instanceId === hostId
       ? { ...i, attachmentIds: [...i.attachmentIds, attachmentId] }

@@ -13,8 +13,8 @@ export const definitionCategories = [
   "starting-loadout",
 ] as const;
 export type DefinitionCategory = (typeof definitionCategories)[number];
-export type RarityId =
-  "threshold-lab:common" | "threshold-lab:uncommon" | "threshold-lab:rare";
+/** A content-pack-owned, namespaced rarity tier identifier. */
+export type RarityId = string;
 export interface Presentation {
   readonly name: string;
   readonly description: string;
@@ -38,6 +38,8 @@ export interface BaseDefinition {
   readonly id: string;
   readonly category: DefinitionCategory;
   readonly tags: readonly string[];
+  /** Stable, authored classifications such as distinct consumable families. */
+  readonly groups?: readonly string[];
   readonly rarity?: RarityId;
   readonly basePrice?: number;
   readonly weight?: number;
@@ -52,6 +54,7 @@ export interface PlayableObjectDefinition extends BaseDefinition {
   readonly category: "playable-object";
   readonly baseValues: Readonly<Record<string, number>>;
   readonly compatibleAttachmentTags?: readonly string[];
+  readonly attachmentSlots?: number;
   readonly gameplay: Readonly<Record<string, unknown>>;
 }
 export interface PassiveModifierDefinition extends TriggerDefinition {
@@ -70,6 +73,8 @@ export interface AttachedModifierDefinition extends TriggerDefinition {
   readonly category: "attached-modifier";
   readonly hostCategories: readonly ("playable-object" | "passive-modifier")[];
   readonly requiredHostTags?: readonly string[];
+  /** Optional exclusive layer on a host; only one attachment may occupy it. */
+  readonly slot?: string;
   readonly occupiesInventory: boolean;
 }
 export interface RunUpgradeDefinition extends BaseDefinition {

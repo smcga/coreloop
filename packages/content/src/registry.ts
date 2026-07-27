@@ -65,6 +65,30 @@ export function validateContentPack(
     );
   const ids = new Map<string, ContentDefinition>(),
     rarityIds = new Set(pack?.rarities?.map((r) => r.id) ?? []);
+  for (const [i, rarity] of (pack?.rarities ?? []).entries()) {
+    if (!idPattern.test(rarity.id))
+      add(`rarities[${i}].id`, "must be a namespaced stable ID", rarity.id);
+    if (pack.rarities.findIndex((candidate) => candidate.id === rarity.id) < i)
+      add(`rarities[${i}].id`, "duplicate rarity ID", rarity.id);
+    if (!validNumber(rarity.defaultWeight) || rarity.defaultWeight === 0)
+      add(
+        `rarities[${i}].defaultWeight`,
+        "must be finite and positive",
+        rarity.defaultWeight,
+      );
+    if (!validNumber(rarity.priceMultiplier))
+      add(
+        `rarities[${i}].priceMultiplier`,
+        "must be finite and non-negative",
+        rarity.priceMultiplier,
+      );
+    if (!rarity.presentation?.name || !rarity.presentation?.description)
+      add(
+        `rarities[${i}].presentation`,
+        "name and description are required",
+        rarity.presentation,
+      );
+  }
   for (const [i, d] of (pack?.definitions ?? []).entries()) {
     if (!definitionCategories.includes(d.category)) {
       add(
@@ -90,6 +114,15 @@ export function validateContentPack(
       d.tags.some((t) => typeof t !== "string" || !tagPattern.test(t))
     )
       add("tags", "tags must be well-formed stable strings", d.tags, d);
+    if (
+      d.groups !== undefined &&
+      (!Array.isArray(d.groups) ||
+        d.groups.some(
+          (group) => typeof group !== "string" || !idPattern.test(group),
+        ) ||
+        new Set(d.groups).size !== d.groups.length)
+    )
+      add("groups", "groups must be unique namespaced stable IDs", d.groups, d);
     if (!d.presentation?.name || !d.presentation?.description)
       add(
         "presentation",
@@ -186,6 +219,23 @@ export function validateContentPack(
         d.hostCategories,
         d,
       );
+    if (
+      d.category === "attached-modifier" &&
+      d.slot !== undefined &&
+      !idPattern.test(d.slot)
+    )
+      add("slot", "must be a namespaced stable ID", d.slot, d);
+    if (
+      (d.category === "playable-object" || d.category === "passive-modifier") &&
+      d.attachmentSlots !== undefined &&
+      (!Number.isInteger(d.attachmentSlots) || d.attachmentSlots < 0)
+    )
+      add(
+        "attachmentSlots",
+        "must be a non-negative integer",
+        d.attachmentSlots,
+        d,
+      );
   }
   const terms = new Set(pack?.terminology?.map((t) => t.id) ?? []);
   if (!terms.has(pack?.defaultTerminologyId))
@@ -227,6 +277,11 @@ export class ContentRegistry {
         `Content pack ${this.pack.id}: unknown definition '${id}'`,
       );
     return d;
+  }
+  byGroup(groupId: string): readonly ContentDefinition[] {
+    return this.pack.definitions.filter((definition) =>
+      definition.groups?.includes(groupId),
+    );
   }
   getAs<C extends DefinitionCategory>(
     id: string,

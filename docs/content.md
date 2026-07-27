@@ -4,7 +4,7 @@
 
 ## Definitions, instances, and IDs
 
-Definitions are immutable authored facts. The registry clones and deeply freezes a successfully validated pack. IDs use `namespace:stable-name`; display names are never identity. IDs are globally unique within a pack, including across categories. `ContentRegistry.get`, `getAs`, `byCategory`, and `byTag` retain authored order as canonical deterministic ordering.
+Definitions are immutable authored facts. The registry clones and deeply freezes a successfully validated pack. IDs use `namespace:stable-name`; display names are never identity. IDs are globally unique within a pack, including across categories. `ContentRegistry.get`, `getAs`, `byCategory`, `byTag`, and `byGroup` retain authored order as canonical deterministic ordering. Optional namespaced `groups` classify content into authored families without adding theme-specific categories to the framework; for example, two games can each define different families of consumables.
 
 Instances contain only run state: instance ID, definition ID, stored values, disabled/expiry state, temporary tags, attachment relationships, and transformation history. `createInstance` increments a caller-owned counter. Definitions remain outside saves. Categories are playable object, passive modifier, consumable, attached modifier, run upgrade, reward container, encounter, special encounter rule, shop pool, and starting loadout. Playable-object `gameplay` payloads are namespaced serialisable data core does not interpret.
 
@@ -20,7 +20,16 @@ Availability may restrict encounter range/kind, tags, owned content, copy count,
 
 ## Attachments, duplication, and transformation
 
-Hosts have counted slots (one by default; selected passives have two). Attachments have independent IDs, point to their host, and are ordered on the host. Shipped attachments do not consume ordinary inventory. Detach clears both sides. Incompatible/full hosts reject attachment.
+Hosts have counted attachment capacity (one by default). Attachments have independent IDs, point to their host, and are ordered on the host. An attachment may declare a namespaced exclusive `slot`; a host can carry attachments in different slots but never two in the same slot. This supports independent, stackable layers such as a playable object's finish, mark, and tuning without putting those theme-specific concepts in core. Shipped attachments do not consume ordinary inventory. Detach clears both sides. Incompatible, full, and same-slot hosts reject attachment.
+
+Together, the generic primitives cover familiar run-builder content without hard-coding another game's vocabulary:
+
+- consumable categories plus `groups` represent separate consumable families;
+- authored rarity IDs, weights, presentation, and price multipliers represent rarity tiers for passive modifiers or any other definition;
+- attached modifiers with exclusive slots represent independent edition-, seal-, and enhancement-like layers;
+- transformation supports replacing a definition while preserving instance identity, while attachments support additive alterations that remain separate content instances.
+
+Threshold Lab exercises these contracts with two technique groups and three attachment slots (`finish`, `mark`, and `tuning`) on playable objects.
 
 Duplication creates a fresh deterministic ID, copies stored values/history, clears temporary/disabled/expiry state, and does not copy attachments. Unique definitions reject duplication. Transformation preserves the instance ID, resets stored values to target defaults, clears disabled/expiry, records the former definition, and retains only compatible attachments; incompatible children become detached inventory.
 
