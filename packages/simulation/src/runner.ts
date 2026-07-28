@@ -1,172 +1,228 @@
-import { thresholdLabRunConfiguration } from "@core-loop/content";
 import {
-  createRunEngine,
   createHeadlessRunSession,
   type RunEvent,
   type RunState,
 } from "@core-loop/core";
-import { thresholdLabContentPack } from "@core-loop/content";
-import {
-  COMBINATION_GRID_ID,
-  TIMING_METER_ID,
-  combinationGridModule,
-  timingMeterModule,
-  gameplayModules,
-  type CombinationGridAction,
-  type CombinationGridState,
-  type TimingMeterAction,
-  type TimingMeterState,
-} from "../../../apps/threshold-lab/src/gameplay/modules";
 import {
   SIMULATION_REPORT_VERSION,
   type ContentMetrics,
+  type EconomyStrategy,
+  type SimulationComposition,
   type SimulationReport,
   type SimulationRequest,
+  type SimulationStrategy,
 } from "./types";
 
-const round = (value: number) => Number(value.toFixed(4));
-const combinations = <T>(items: readonly T[], count: number): T[][] => {
-  const result: T[][] = [];
-  const visit = (start: number, selected: T[]) => {
-    if (selected.length === count) return void result.push(selected);
-    for (let index = start; index < items.length; index++)
-      visit(index + 1, [...selected, items[index]!]);
-  };
-  visit(0, []);
-  return result;
-};
-const gridActions = (
-  state: CombinationGridState,
-): readonly CombinationGridAction[] => {
-  const score = (objects: CombinationGridState["objects"]) => {
-    const values = objects.map((item) => item.value).sort((a, b) => a - b);
-    const tags = objects.map((item) => item.tags[0]);
-    return (
-      objects.reduce((sum, item) => sum + item.value, 0) +
-      (new Set(values).size < values.length ? 10 : 0) +
-      (values.some((v) => values.includes(v + 1) && values.includes(v + 2))
-        ? 15
-        : 0) +
-      (tags.some((tag) => tags.filter((other) => other === tag).length >= 3)
-        ? 12
-        : 0)
+const round = (n: number) => Number(n.toFixed(4));
+const named = <T extends { readonly id: string }>(
+  items: readonly T[],
+  id: string,
+  label: string,
+): T => {
+  const item = items.find((entry) => entry.id === id);
+  if (!item)
+    throw new Error(
+      `Unknown ${label} '${id}'. Available: ${
+        items
+          .map((entry) => entry.id)
+          .sort()
+          .join(", ") || "none"
+      }`,
     );
-  };
-  const best = combinations(state.objects, state.selectionLimit).sort(
-    (a, b) =>
-      score(b) - score(a) ||
-      a
-        .map((x) => x.id)
-        .join()
-        .localeCompare(b.map((x) => x.id).join()),
-  )[0]!;
-  return [
-    ...best.map((item) => ({ type: "toggle", objectId: item.id }) as const),
-    { type: "submit" },
-  ];
+  return item;
 };
-const timingActions = (
-  seed: number,
-  count: number,
-): readonly TimingMeterAction[] => {
-  const offsets = [0, -90, 220, 360, 80, -240, 20, -420];
-  return Array.from({ length: count }, (_, index) => ({
-    type: "stop" as const,
-    position: Math.max(
-      0,
-      Math.min(1000, 500 + offsets[(seed + index) % offsets.length]!),
-    ),
-  }));
+const validateId = (id: string, label: string) => {
+  if (!id.includes(":"))
+    throw new Error(`${label} ID '${id}' must be namespaced`);
 };
 
+export class SimulationRegistry {
+  private readonly entries = new Map<string, SimulationComposition>();
+  register(composition: SimulationComposition): this {
+    validateId(composition.id, "Composition");
+    if (this.entries.has(composition.id))
+      throw new Error(`Duplicate simulation composition '${composition.id}'`);
+    for (const item of [
+      ...composition.policySets,
+      ...composition.strategies,
+      ...composition.economyStrategies,
+    ])
+      validateId(item.id, "Registered");
+    this.entries.set(composition.id, composition);
+    return this;
+  }
+  get(id: string): SimulationComposition {
+    return named(this.list(), id, "composition");
+  }
+  list(): readonly SimulationComposition[] {
+    return [...this.entries.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+}
+
+export const bindModuleDefaultStrategy = (
+  composition: Pick<SimulationComposition, "modules">,
+  moduleId: string,
+  id = `${moduleId}:default-bot`,
+): SimulationStrategy => ({
+  id,
+  compatibleModuleIds: [moduleId],
+  nextAction({ state }) {
+    const bot = composition.modules.get(moduleId).createBotStrategy?.();
+    if (!bot)
+      throw new Error(
+        `Module '${moduleId}' does not provide a default bot strategy`,
+      );
+    return bot.nextAction(state as Readonly<unknown>);
+  },
+});
+export const cheapestAffordableEconomyStrategy: EconomyStrategy = {
+  id: "core:cheapest-affordable",
+  nextCommand({ state, definitionFor }) {
+    if (state.phase === "reward") return { type: "enter-shop" };
+    if (state.phase !== "shop")
+      throw new Error(`Economy strategy cannot handle phase '${state.phase}'`);
+    const offer = [...(state.shop?.offers ?? [])]
+      .filter((x) => {
+        if (x.price > state.currency || x.acquisition.type === "attachment")
+          return false;
+        if (x.acquisition.type === "run-upgrade")
+          return !state.inventory.upgradeIds.includes(x.definitionId);
+        const count = state.inventory.instances.filter(
+          (item) => definitionFor(item.definitionId)?.category === x.category,
+        ).length;
+        return (
+          !definitionFor(x.definitionId)?.occupiesCapacity ||
+          count < (state.inventory.capacities[x.category] ?? 0)
+        );
+      })
+      .sort(
+        (a, b) =>
+          a.price - b.price || a.definitionId.localeCompare(b.definitionId),
+      )[0];
+    if (offer && definitionFor(offer.definitionId))
+      return { type: "buy-offer", offerId: offer.id };
+    return { type: "leave-shop" };
+  },
+};
+
+type Row = {
+  position: number;
+  encounterId: string;
+  kind: string;
+  ruleIds: string[];
+  wins: number;
+  losses: number;
+  tracks: Map<string, number[]>;
+  targets: Map<string, number[]>;
+};
 type MutableContent = {
   eligible: number;
   offered: number;
+  acquired: number;
   purchased: number;
   sold: number;
+  used: number;
   triggered: number;
-  scoreContribution: number;
-  currencyContribution: number;
+  contributions: Map<string, number>;
+  currency: number;
   acquiredAt: number[];
-};
-const runEngine = createRunEngine(thresholdLabRunConfiguration);
-const runSession = createHeadlessRunSession({
-  configuration: thresholdLabRunConfiguration,
-  modules: gameplayModules,
-});
-
-export const defaultSimulationRequest: SimulationRequest = {
-  contentPackId: "threshold-lab",
-  gameplayModuleId: COMBINATION_GRID_ID,
-  policySetId: "core:default",
-  loadoutId: "threshold-lab:starter-balanced",
-  strategyId: "balanced",
-  runCount: 100,
-  seedStart: 1,
-  maxOutliers: 5,
 };
 
 export function runSimulation(
-  input: Partial<SimulationRequest> = {},
+  registry: SimulationRegistry,
+  input: Partial<SimulationRequest> & { compositionId: string },
 ): SimulationReport {
-  const request = { ...defaultSimulationRequest, ...input };
-  if (request.contentPackId !== "threshold-lab")
+  const composition = registry.get(input.compositionId);
+  const request: SimulationRequest = {
+    contentPackId: composition.content.id,
+    gameplayModuleId: composition.defaults.gameplayModuleId,
+    policySetId: composition.defaults.policySetId,
+    loadoutId: composition.defaults.loadoutId,
+    strategyId: composition.defaults.strategyId,
+    economyStrategyId: composition.defaults.economyStrategyId,
+    runCount: 100,
+    seedStart: 1,
+    maxOutliers: 5,
+    maxCommands: 300,
+    ...input,
+  };
+  if (request.contentPackId !== composition.content.id)
     throw new Error(
-      `Unknown content pack '${request.contentPackId}'. Available: threshold-lab`,
+      `Unknown content pack '${request.contentPackId}'. Available: ${composition.content.id}`,
     );
-  if (
-    ![COMBINATION_GRID_ID, TIMING_METER_ID].includes(request.gameplayModuleId)
-  )
-    throw new Error(`Unknown gameplay module '${request.gameplayModuleId}'`);
-  if (request.policySetId !== "core:default")
-    throw new Error(`Unknown policy set '${request.policySetId}'`);
-  if (request.strategyId !== "balanced")
-    throw new Error(
-      `Strategy '${request.strategyId}' is incompatible; use 'balanced'`,
-    );
-  if (
-    !Number.isSafeInteger(request.runCount) ||
-    request.runCount < 1 ||
-    !Number.isSafeInteger(request.seedStart) ||
-    request.seedStart < 0
-  )
-    throw new Error(
-      "Run count must be positive and seed start must be a non-negative safe integer",
-    );
-  const module =
-    request.gameplayModuleId === COMBINATION_GRID_ID
-      ? combinationGridModule
-      : timingMeterModule;
-  const encounterRows = Array.from({ length: 6 }, () => ({
-    scores: [] as number[],
-    targets: [] as number[],
-    wins: 0,
-    specials: 0,
-    specialFailures: 0,
-  }));
-  const content = new Map<string, MutableContent>(
-    thresholdLabRunConfiguration
-      .content!.listDefinitions({ gameplayModuleId: request.gameplayModuleId })
-      .filter((item) => item.weight)
-      .map((item) => [
-        item.id,
-        {
-          eligible: 0,
-          offered: 0,
-          purchased: 0,
-          sold: 0,
-          triggered: 0,
-          scoreContribution: 0,
-          currencyContribution: 0,
-          acquiredAt: [],
-        },
-      ]),
+  const module = composition.modules.get(request.gameplayModuleId);
+  const policy = named(
+    composition.policySets,
+    request.policySetId,
+    "policy set",
   );
+  const strategy = named(
+    composition.strategies,
+    request.strategyId,
+    "strategy",
+  );
+  const economyStrategy = named(
+    composition.economyStrategies,
+    request.economyStrategyId,
+    "economy strategy",
+  );
+  if (
+    strategy.compatibleModuleIds &&
+    !strategy.compatibleModuleIds.includes(module.id)
+  )
+    throw new Error(
+      `Strategy '${strategy.id}' is incompatible with module '${module.id}'`,
+    );
+  if (
+    strategy.requiredCapabilities?.some(
+      (capability) => !module.capabilities.includes(capability),
+    )
+  )
+    throw new Error(
+      `Strategy '${strategy.id}' requires unsupported capabilities`,
+    );
+  for (const [label, value, min] of [
+    ["run count", request.runCount, 1],
+    ["seed start", request.seedStart, 0],
+    ["max commands", request.maxCommands, 1],
+    ["max outliers", request.maxOutliers, 0],
+  ] as const)
+    if (!Number.isSafeInteger(value) || value < min)
+      throw new Error(`${label} must be a safe integer of at least ${min}`);
+  const session = createHeadlessRunSession({
+    configuration: composition.configuration,
+    modules: composition.modules,
+  });
+  const definitions =
+    composition.configuration.content?.listDefinitions({
+      gameplayModuleId: module.id,
+    }) ?? [];
+  if (!definitions.length)
+    throw new Error(`Content pool for module '${module.id}' is empty`);
+  const metrics = new Map<string, MutableContent>(
+    definitions.map((x) => [
+      x.id,
+      {
+        eligible: 0,
+        offered: 0,
+        acquired: 0,
+        purchased: 0,
+        sold: 0,
+        used: 0,
+        triggered: 0,
+        contributions: new Map(),
+        currency: 0,
+        acquiredAt: [],
+      },
+    ]),
+  );
+  const rows = new Map<string, Row>();
+  const phaseFrequency: Record<string, number> = {};
   let completed = 0,
     failed = 0,
     aborted = 0,
-    encounterTotal = 0,
-    commandTotal = 0,
+    encountersReached = 0,
+    commandsTotal = 0,
     earned = 0,
     spent = 0,
     purchases = 0,
@@ -174,33 +230,29 @@ export function runSimulation(
     purchasePrice = 0,
     unused = 0;
   const rerolls = 0;
-  const diagnostics: { seed: number; message: string }[] = [],
-    outliers: { seed: number; score: number; currency: number }[] = [];
+  const diagnostics: { seed: number; code: string; message: string }[] = [];
+  const outliers: { seed: number; score: number; currency: number }[] = [];
   for (let offset = 0; offset < request.runCount; offset++) {
     const seed = request.seedStart + offset;
-    let state = runSession.handleCommand(runSession.createInitialState(), {
+    let state = session.handleCommand(session.createInitialState(), {
       type: "start-run",
       seed,
       gameplayModuleId: module.id,
+      loadoutId: request.loadoutId,
     }).state;
     let commands = 1,
       runScore = 0;
-    const apply = (command: Parameters<typeof runEngine.handle>[1]) => {
-      const before = state;
-      const result = runSession.handleCommand(state, command);
-      state = result.state;
-      commands++;
-      record(result.events, before);
-      return result.events;
-    };
     const record = (events: readonly RunEvent[], before: RunState) => {
       for (const event of events) {
         if (event.type === "currency-awarded") earned += event.amount;
         if (event.type === "item-purchased") {
-          const metric = content.get(event.instance.definitionId)!;
-          metric.purchased++;
-          metric.acquiredAt.push(before.encounterNumber);
           purchases++;
+          const m = metrics.get(event.instance.definitionId);
+          if (m) {
+            m.purchased++;
+            m.acquired++;
+            m.acquiredAt.push(before.encounterNumber);
+          }
           const offer = before.shop?.offers.find((x) => x.id === event.offerId);
           if (offer) {
             spent += offer.price;
@@ -209,154 +261,194 @@ export function runSimulation(
         }
         if (event.type === "item-sold") {
           sales++;
-          content.get(
-            before.inventory.instances.find(
-              (x) => x.instanceId === event.instanceId,
-            )!.definitionId,
-          )!.sold++;
-        }
-        if (event.type === "modifier-triggered") {
-          const owned = before.inventory.instances.find(
+          const item = before.inventory.instances.find(
             (x) => x.instanceId === event.instanceId,
           );
-          if (owned) content.get(owned.definitionId)!.triggered++;
+          if (item) metrics.get(item.definitionId)!.sold++;
+        }
+        if (event.type === "consumable-used") {
+          const item = before.inventory.instances.find(
+            (x) => x.instanceId === event.instanceId,
+          );
+          if (item) metrics.get(item.definitionId)!.used++;
+        }
+        if (event.type === "modifier-triggered") {
+          const item = before.inventory.instances.find(
+            (x) => x.instanceId === event.instanceId,
+          );
+          if (item) metrics.get(item.definitionId)!.triggered++;
         }
       }
     };
+    const command = (value: Parameters<typeof session.handleCommand>[1]) => {
+      const before = state;
+      const result = session.handleCommand(state, value);
+      state = result.state;
+      commands++;
+      record(result.events, before);
+      const rejection = result.events.find(
+        (x) => x.type === "command-rejected",
+      );
+      if (rejection && rejection.type === "command-rejected")
+        throw new Error(rejection.reason);
+    };
     try {
       while (
-        state.phase !== "run-complete" &&
-        state.phase !== "run-failed" &&
-        commands < 300
+        !["run-complete", "run-failed", "abandoned"].includes(state.phase) &&
+        commands < request.maxCommands
       ) {
+        phaseFrequency[state.phase] = (phaseFrequency[state.phase] ?? 0) + 1;
         if (state.phase === "encounter-ready") {
-          const consumable = state.inventory.instances.find(
-            (item) =>
-              runEngine.definitionFor(item.definitionId)?.category ===
-              "consumable",
-          );
-          if (consumable)
-            apply({
-              type: "use-consumable",
-              instanceId: consumable.instanceId,
-            });
           const brief = state.currentEncounter!;
-          const started = apply({ type: "start-encounter" });
-          if (!state.gameplaySession)
-            throw new Error(
-              started.find((event) => event.type === "command-rejected")
-                ?.reason ?? "Gameplay session was not initialised",
+          command({ type: "start-encounter" });
+          while (
+            state.phase === "encounter-active" &&
+            commands < request.maxCommands
+          ) {
+            const data = module.validateState(state.gameplaySession!.data);
+            const result = session.handleGameplayAction(
+              state,
+              strategy.nextAction({
+                state: data,
+                run: state,
+                moduleId: module.id,
+              }),
             );
-          let moduleState = module.validateState(state.gameplaySession!.data);
-          const actions =
-            module.id === COMBINATION_GRID_ID
-              ? gridActions(moduleState as CombinationGridState)
-              : timingActions(
-                  seed + brief.number,
-                  (moduleState as TimingMeterState).attemptCount,
-                );
-          let actionEvents: readonly RunEvent[] = [];
-          for (const action of actions) {
+            if (!result.accepted)
+              throw new Error(
+                result.events.find((x) => x.type === "command-rejected")
+                  ?.reason ?? "Strategy action rejected",
+              );
             const before = state;
-            const result = runSession.handleGameplayAction(state, action);
-            if (!result.accepted) throw new Error("strategy action rejected");
             state = result.state;
-            record(result.events, before);
-            actionEvents = result.events;
-            if (state.gameplaySession)
-              moduleState = module.validateState(state.gameplaySession.data);
             commands++;
+            record(result.events, before);
           }
-          const events = actionEvents;
-          const row = encounterRows[brief.number - 1]!;
-          const final = state.lastReport!.score;
-          row.scores.push(final);
-          row.targets.push(brief.target);
-          runScore += final;
-          row.specials += Number(brief.rules.length > 0);
-          const won = events.some((event) => event.type === "encounter-won");
+          if (!state.lastReport)
+            throw new Error("Coordinator did not produce an encounter report");
+          const key = `${brief.number}:${brief.id}`;
+          const row = rows.get(key) ?? {
+            position: brief.number,
+            encounterId: brief.id,
+            kind: state.schedule[brief.number - 1]?.kind ?? "ordinary",
+            ruleIds: brief.rules.map((x) => x.id).sort(),
+            wins: 0,
+            losses: 0,
+            tracks: new Map(),
+            targets: new Map(),
+          };
+          const won = state.lastOutcome?.success ?? false;
           row.wins += Number(won);
-          row.specialFailures += Number(!won && brief.rules.length > 0);
+          row.losses += Number(!won);
+          const tracks = {
+            score: state.lastReport.score,
+            ...state.lastReport.tracks,
+          };
+          for (const [id, value] of Object.entries(tracks)) {
+            const values = row.tracks.get(id) ?? [];
+            values.push(value);
+            row.tracks.set(id, values);
+          }
+          const targets = row.targets.get("score") ?? [];
+          targets.push(brief.target);
+          row.targets.set("score", targets);
+          rows.set(key, row);
+          runScore += state.lastReport.score;
           for (const entry of state.scoreLedger)
             if (
               entry.source.definitionId &&
-              content.has(entry.source.definitionId)
-            )
-              content.get(entry.source.definitionId)!.scoreContribution +=
-                entry.after - entry.before;
-        } else if (state.phase === "reward") apply({ type: "enter-shop" });
-        else if (state.phase === "shop") {
-          for (const metric of content.values()) metric.eligible++;
-          for (const offer of state.shop!.offers)
-            if (content.has(offer.definitionId))
-              content.get(offer.definitionId)!.offered++;
-          const offer = [...state.shop!.offers]
-            .filter((item) => item.price <= state.currency)
-            .sort(
-              (a, b) =>
-                a.price - b.price ||
-                a.definitionId.localeCompare(b.definitionId),
-            )[0];
-          if (offer) apply({ type: "buy-offer", offerId: offer.id });
-          apply({ type: "leave-shop" });
-        } else throw new Error(`Unsupported phase ${state.phase}`);
+              metrics.has(entry.source.definitionId)
+            ) {
+              const m = metrics.get(entry.source.definitionId)!;
+              m.contributions.set(
+                entry.track,
+                (m.contributions.get(entry.track) ?? 0) +
+                  entry.after -
+                  entry.before,
+              );
+            }
+        } else if (state.phase === "reward" || state.phase === "shop") {
+          if (state.phase === "shop") {
+            for (const m of metrics.values()) m.eligible++;
+            for (const offer of state.shop?.offers ?? [])
+              metrics.get(offer.definitionId)!.offered++;
+          }
+          command(
+            economyStrategy.nextCommand({
+              state,
+              definitionFor: (id) => session.definitionFor(id),
+            }),
+          );
+        } else throw new Error(`Unsupported phase '${state.phase}'`);
       }
-      if (commands >= 300) {
+      if (commands >= request.maxCommands) {
         aborted++;
-        diagnostics.push({ seed, message: "Command safety limit reached" });
+        diagnostics.push({
+          seed,
+          code: "command-limit",
+          message: `Command safety limit ${request.maxCommands} reached`,
+        });
       } else if (state.phase === "run-complete") completed++;
       else failed++;
     } catch (error) {
       aborted++;
-      diagnostics.push({ seed, message: (error as Error).message });
+      diagnostics.push({
+        seed,
+        code: "simulation-error",
+        message: (error as Error).message,
+      });
     }
-    encounterTotal += state.encounterNumber;
-    commandTotal += commands;
+    encountersReached += state.encounterNumber;
+    commandsTotal += commands;
     unused += state.currency;
     outliers.push({ seed, score: runScore, currency: state.currency });
   }
-  const encounters = encounterRows.map((row, index) => {
-    const sorted = [...row.scores].sort((a, b) => a - b);
-    const total = row.scores.reduce((a, b) => a + b, 0);
-    const targets = row.targets.reduce((a, b) => a + b, 0);
-    const over = row.scores
-      .filter((s, i) => s >= row.targets[i]!)
-      .reduce((a, s, i) => a + Math.max(0, s - row.targets[i]!), 0);
-    const failures = row.scores
-      .map((s, i) => Math.max(0, row.targets[i]! - s))
-      .filter(Boolean);
-    return {
-      encounter: index + 1,
-      attempts: row.scores.length,
+  const encounters = [...rows.values()]
+    .sort(
+      (a, b) =>
+        a.position - b.position || a.encounterId.localeCompare(b.encounterId),
+    )
+    .map((row) => ({
+      position: row.position,
+      encounterId: row.encounterId,
+      kind: row.kind,
+      ruleIds: row.ruleIds,
+      attempts: [...row.tracks.values()][0]?.length ?? 0,
       wins: row.wins,
-      winRate: round(row.wins / (row.scores.length || 1)),
-      averageScore: round(total / (row.scores.length || 1)),
-      medianScore: sorted.length
-        ? sorted[Math.floor((sorted.length - 1) / 2)]!
-        : 0,
-      minimumScore: sorted[0] ?? 0,
-      maximumScore: sorted.at(-1) ?? 0,
-      averageTarget: round(targets / (row.targets.length || 1)),
-      scoreToTargetRatio: round(total / (targets || 1)),
-      averageOverkill: round(over / (row.wins || 1)),
-      averageFailureMargin: round(
-        failures.reduce((a, b) => a + b, 0) / (failures.length || 1),
-      ),
-      specialFrequency: round(row.specials / (row.scores.length || 1)),
-      specialFailureRate: round(row.specialFailures / (row.specials || 1)),
-    };
-  });
-  const contentMetrics: ContentMetrics[] = [...content]
+      losses: row.losses,
+      winRate: round(row.wins / Math.max(1, row.wins + row.losses)),
+      tracks: [...row.tracks]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, values]) => {
+          const sorted = [...values].sort((a, b) => a - b),
+            targets = row.targets.get(id);
+          return {
+            id,
+            average: round(values.reduce((a, b) => a + b, 0) / values.length),
+            median: sorted[Math.floor((sorted.length - 1) / 2)]!,
+            minimum: sorted[0]!,
+            maximum: sorted.at(-1)!,
+            averageTarget: targets
+              ? round(targets.reduce((a, b) => a + b, 0) / targets.length)
+              : null,
+          };
+        }),
+    }));
+  const contentMetrics: ContentMetrics[] = [...metrics]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([definitionId, m]) => ({
       definitionId,
       eligible: m.eligible,
       offered: m.offered,
+      acquired: m.acquired,
       purchased: m.purchased,
       sold: m.sold,
+      used: m.used,
       triggered: m.triggered,
-      scoreContribution: m.scoreContribution,
-      currencyContribution: m.currencyContribution,
+      scoreContribution: Object.fromEntries(
+        [...m.contributions].sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      currencyContribution: m.currency,
       averageEncounterAcquired: m.acquiredAt.length
         ? round(m.acquiredAt.reduce((a, b) => a + b, 0) / m.acquiredAt.length)
         : null,
@@ -370,7 +462,7 @@ export function runSimulation(
           : m.purchased === 0
             ? [{ type: "offered-never-purchased", id: m.definitionId }]
             : m.triggered === 0 &&
-                runEngine.definitionFor(m.definitionId)?.category === "modifier"
+                session.definitionFor(m.definitionId)?.category === "modifier"
               ? [{ type: "purchased-never-triggered", id: m.definitionId }]
               : [],
     )
@@ -378,12 +470,13 @@ export function runSimulation(
   return {
     reportFormatVersion: SIMULATION_REPORT_VERSION,
     frameworkVersion: "0.1.0",
-    content: {
-      id: thresholdLabContentPack.id,
-      version: thresholdLabContentPack.version,
-    },
+    composition: { id: composition.id, version: composition.version },
+    provider: composition.provider,
+    content: composition.content,
     module: { id: module.id, version: module.version },
-    policySet: { id: "core:default", version: 1 },
+    policySet: policy,
+    strategy: { id: strategy.id },
+    economyStrategy: { id: economyStrategy.id },
     request,
     outcomes: {
       total: request.runCount,
@@ -391,8 +484,8 @@ export function runSimulation(
       failed,
       aborted,
       completionRate: round(completed / request.runCount),
-      averageEncounterReached: round(encounterTotal / request.runCount),
-      averageCommands: round(commandTotal / request.runCount),
+      averageEncounterReached: round(encountersReached / request.runCount),
+      averageCommands: round(commandsTotal / request.runCount),
       unusedCurrencyAverage: round(unused / request.runCount),
     },
     encounters,
@@ -402,7 +495,10 @@ export function runSimulation(
       purchases,
       rerolls,
       sales,
-      averagePurchasePrice: round(purchasePrice / (purchases || 1)),
+      phaseFrequency: Object.fromEntries(
+        Object.entries(phaseFrequency).sort(([a], [b]) => a.localeCompare(b)),
+      ),
+      averagePurchasePrice: round(purchasePrice / Math.max(1, purchases)),
     },
     contentMetrics,
     reachability,

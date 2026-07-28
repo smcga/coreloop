@@ -39,10 +39,10 @@ export function formatHumanReport(report: SimulationReport): string {
     `  Commands per run    ${report.outcomes.averageCommands.toFixed(2)}`,
     "",
     "Encounter performance",
-    "  #  attempts  win rate  avg score  avg target  ratio",
+    "  #  identity                  attempts  win rate  tracks",
     ...report.encounters.map(
       (row) =>
-        `  ${String(row.encounter).padStart(1)}  ${String(row.attempts).padStart(8)}  ${percent(row.winRate).padStart(8)}  ${row.averageScore.toFixed(1).padStart(9)}  ${row.averageTarget.toFixed(1).padStart(10)}  ${row.scoreToTargetRatio.toFixed(2).padStart(5)}`,
+        `  ${String(row.position).padStart(2)} ${row.encounterId.padEnd(24)} ${String(row.attempts).padStart(8)}  ${percent(row.winRate).padStart(8)}  ${row.tracks.map((track) => `${track.id}=${track.average.toFixed(1)}`).join(", ")}`,
     ),
     "",
     "Economy",
