@@ -11,8 +11,6 @@ export type ChoiceAction = { readonly type: "choose"; readonly index: number };
 export const choiceModule: GameplayModule<ChoiceState, ChoiceAction> = {
   id: "starter:three-choice",
   version: 1,
-  displayName: "Three Choice",
-  description: "Choose three generated values.",
   capabilities: ["starter:choice"],
   createEncounter(context) {
     let rng = createRandom(context.seed);

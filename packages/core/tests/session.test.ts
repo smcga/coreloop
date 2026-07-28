@@ -15,8 +15,6 @@ const oneActionModule = (
 ): GameplayModule<State, Action> => ({
   id: "test:one-action",
   version: 1,
-  displayName: "One action",
-  description: "Test fixture",
   capabilities: ["score", "action"],
   createEncounter: () => ({ state: { count: 0 } }),
   validateState(value) {

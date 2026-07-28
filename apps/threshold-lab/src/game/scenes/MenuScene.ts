@@ -1,7 +1,11 @@
 import Phaser from "phaser";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
-import { terminology, toggleTerminology } from "../../terminology";
+import {
+  presentation,
+  terminology,
+  toggleTerminology,
+} from "../../terminology";
 import { computeMenuLayout, type Rect } from "../ui/Layout";
 import { ui } from "../ui/UiTokens";
 import { COMBINATION_GRID_ID, TIMING_METER_ID } from "../../gameplay/modules";
@@ -22,6 +26,7 @@ export class MenuScene extends Phaser.Scene {
     this.children.removeAll();
     const { width, height } = this.scale;
     const terms = terminology().terms;
+    const modulePresentation = presentation().modules;
     const store = new RunSaveStore(localStorage);
     const saved = store.load();
     const shared = parseSeedLink(
@@ -146,12 +151,12 @@ export class MenuScene extends Phaser.Scene {
           ]
         : []),
       {
-        label: `New · Combination Grid\nNumber patterns and selections`,
+        label: `New · ${modulePresentation[COMBINATION_GRID_ID]!.name}\n${modulePresentation[COMBINATION_GRID_ID]!.description}`,
         action: () =>
           this.scene.start("lab", { moduleId: COMBINATION_GRID_ID }),
       },
       {
-        label: `New · Timing Meter\nStop the marker near centre`,
+        label: `New · ${modulePresentation[TIMING_METER_ID]!.name}\n${modulePresentation[TIMING_METER_ID]!.description}`,
         action: () => this.scene.start("lab", { moduleId: TIMING_METER_ID }),
       },
       ...(saved
@@ -186,7 +191,7 @@ export class MenuScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.subtitleY,
-        `Build a ${terms.run.singular.toLowerCase()} through six ${terms.encounter.plural.toLowerCase()}`,
+        `Build a ${terms.run.singular.toLowerCase()} through scheduled ${terms.encounter.plural.toLowerCase()}`,
         {
           fontFamily: "system-ui",
           fontSize: `${Math.min(20, width / 20)}px`,

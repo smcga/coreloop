@@ -66,8 +66,6 @@ export interface GameplayBotStrategy<TState, TAction> {
 export interface GameplayModule<TState, TAction> {
   readonly id: string;
   readonly version: number;
-  readonly displayName: string;
-  readonly description: string;
   readonly capabilities: readonly string[];
   createEncounter(
     context: GameplayEncounterContext,

@@ -74,6 +74,8 @@ Required rules:
 
 Core owns only the `RuntimeContentProvider` contract, generic runtime definitions, loadouts, and serialisable instances. `packages/content` owns authored definitions and the validated registry adapter. Consequently run state contains stable definition IDs and mutable instance data, never names, descriptions, artwork, or the authored definition bodies.
 
+Locale presentation is selected independently by the application. Gameplay modules expose stable IDs and capabilities but no display metadata; locale packs resolve module, content, rule, track and action IDs into words. See [Presentation and localisation](presentation-and-localisation.md).
+
 ## Command and event model
 
 The 0.1 lifecycle is `start-run` → `start-encounter` → `submit-encounter` → `enter-shop` → shop commands → `leave-shop`. Submission either moves immediately to run failure or awards currency; the sixth win completes the run. Invalid phase/command combinations preserve the existing state and emit a typed `command-rejected` event.

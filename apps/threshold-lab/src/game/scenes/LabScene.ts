@@ -10,10 +10,12 @@ import {
   ContentRegistry,
   thresholdLabContentPack,
   thresholdLabRunConfiguration,
+  createEncounterHeaderViewModel,
+  formatCurrency,
 } from "@core-loop/content";
 import { palette } from "../config";
 import { RunSaveStore } from "../../persistence";
-import { terminology } from "../../terminology";
+import { presentation, terminology } from "../../terminology";
 import {
   computeEncounterLayout,
   computeShopLayout,
@@ -203,7 +205,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 2,
-        `${terms.run.singular.toUpperCase()} ${brief.number}/6  •  ${terms.target.singular.toUpperCase()} ${brief.target}  •  ${this.run.currency} ${terms.currency.plural}`,
+        `${createEncounterHeaderViewModel(presentation(), { current: brief.number, total: this.run.schedule.length, target: brief.target, score, currency: this.run.currency }).progress.text.toUpperCase()}  •  ${terms.target.singular.toUpperCase()} ${brief.target}  •  ${formatCurrency(presentation(), this.run.currency)}`,
         {
           fontFamily: ui.font,
           fontSize: hudFont,
@@ -218,7 +220,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 24,
-        `Seed ${this.run.seed}  •  Score ${score}  •  ${grid.selectedIds.length}/${grid.selectionLimit}`,
+        `Seed ${this.run.seed}  •  ${terms.score.singular} ${score}  •  ${grid.selectedIds.length}/${grid.selectionLimit}`,
         { fontFamily: ui.font, fontSize: "13px", color: palette.text },
       )
       .setOrigin(0.5, 0);
@@ -409,6 +411,7 @@ export class LabScene extends Phaser.Scene {
   private renderTiming(): void {
     const brief = this.run.currentEncounter;
     if (!brief || !this.timing) return;
+    const terms = terminology().terms;
     const { width, height } = this.scale;
     const resolved = this.run.phase !== "encounter-active";
     const layout = computeEncounterLayout(width, height, {
@@ -448,7 +451,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.hud.y + 4,
-        `RUN ${brief.number}/6  •  TARGET ${brief.target}  •  SCORE ${progress.score}  •  ¤${this.run.currency}`,
+        `${createEncounterHeaderViewModel(presentation(), { current: brief.number, total: this.run.schedule.length, target: brief.target, score: progress.score, currency: this.run.currency }).progress.text.toUpperCase()}  •  ${terms.target.singular.toUpperCase()} ${brief.target}  •  ${terms.score.singular.toUpperCase()} ${progress.score}  •  ${formatCurrency(presentation(), this.run.currency)}`,
         {
           fontFamily: ui.font,
           fontSize: "15px",
@@ -621,6 +624,7 @@ export class LabScene extends Phaser.Scene {
   private renderShop(): void {
     const { width, height } = this.scale;
     const shop = this.run.shop!;
+    const terms = terminology().terms;
     const owned = this.run.inventory.instances;
     const layout = computeShopLayout(width, height, {
       offerCount: shop.offers.length,
@@ -638,7 +642,7 @@ export class LabScene extends Phaser.Scene {
       88,
     );
     this.add
-      .text(width / 2, layout.header.y + 2, "BUILD SHOP", {
+      .text(width / 2, layout.header.y + 2, terms.shop.singular.toUpperCase(), {
         fontFamily: ui.font,
         fontSize: layout.mode === "compact" ? "20px" : "26px",
         fontStyle: "bold",
@@ -649,7 +653,7 @@ export class LabScene extends Phaser.Scene {
       .text(
         width / 2,
         layout.header.y + 30,
-        `¤ ${this.run.currency}  •  Reroll ¤${shop.rerollPrice}`,
+        `${formatCurrency(presentation(), this.run.currency)}  •  ${terms.reroll.singular} ${formatCurrency(presentation(), shop.rerollPrice)}`,
         {
           fontFamily: ui.font,
           fontSize: "15px",
@@ -714,7 +718,7 @@ export class LabScene extends Phaser.Scene {
       this.textButton(
         buttonX,
         buttonY,
-        `Buy ¤${offer.price}`,
+        `${terms.buy.singular} ${formatCurrency(presentation(), offer.price)}`,
         () => {
           const events = this.dispatch({
             type: "buy-offer",
