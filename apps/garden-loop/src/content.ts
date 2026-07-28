@@ -143,7 +143,7 @@ const definitions: ContentDefinition[] = [
     weight: 9,
     presentation: presentation(
       "Watering Can",
-      "Adds a temporary harvest bonus for one session.",
+      "Adds 3 harvest for the next growing session.",
     ),
     legalPhases: ["encounter-ready"],
     operation: "effect",
@@ -167,7 +167,7 @@ const definitions: ContentDefinition[] = [
     weight: 5,
     presentation: presentation(
       "Deep Rooted",
-      "A plant trait worth extra harvest.",
+      "Adds 2 resilience to its host and 2 harvest.",
     ),
     hostCategories: ["playable-object", "passive-modifier"],
     slot: "garden-loop:trait",
