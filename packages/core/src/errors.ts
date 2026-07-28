@@ -12,6 +12,8 @@ export type FrameworkErrorCode =
   | "unknown-custom-handler"
   | "unknown-gameplay-module"
   | "incompatible-module-version"
+  | "unknown-gameplay-projection"
+  | "incompatible-projection-version"
   | "invalid-numeric-value"
   | "invalid-replay"
   | "invalid-replay-action"
@@ -26,6 +28,7 @@ export interface FrameworkErrorDetails {
   readonly definitionId?: string;
   readonly policyId?: string;
   readonly moduleId?: string;
+  readonly projectionId?: string;
   readonly saveVersion?: number;
   readonly replayVersion?: number;
   readonly migrationStep?: string;

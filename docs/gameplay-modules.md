@@ -1,5 +1,39 @@
 # Gameplay modules
 
+## Projecting run-owned content
+
+The run engine owns inventory instances, attachments, upgrades and their stable
+identities; a gameplay module owns only the mechanic state stored in its session
+envelope. Applications bridge those boundaries with a versioned
+`GameplayContextProjection` in `RunConfiguration`. Immediately before encounter
+creation, the headless coordinator gives that pure projector a read-only,
+presentation-free snapshot of generic instances, runtime definitions, run and
+encounter tags, allowances and the prepared encounter. Its canonical JSON result
+is passed to `GameplayModule.createEncounter` as `context.projection`.
+
+Projection must be deterministic for the same snapshot and definitions. It must
+not retain or mutate inputs, use presentation data, or consume the run RNG;
+module-specific random variation should use `context.seed` after interpreting the
+projection. Core canonicalises output before committing any transition, so
+functions, cycles, non-finite numbers and other invalid JSON reject
+`start-encounter` atomically. The module remains responsible for validating the
+opaque value. Sessions record the projector ID/version and restoration rejects a
+missing or changed projector with a typed compatibility error. Changing projected
+mechanic meaning therefore requires a projector version bump (and normally a
+module version bump when saved module state changes).
+
+Garden Loop is the worked example: its projector selects generic
+`playable-object` instances, carries their stable instance/definition IDs and
+stored growth values into planting, resolves the host relationship for the
+`Deep Rooted` attachment, and adds resilience. Purchased plants consequently
+join later encounters through the same live, save/replay and simulation
+coordinator path. A music game can similarly select sample-tagged instances, or
+a sports game squad-tagged instances, without adding those concepts to core.
+
+Modules that need no owned content require no projector and receive an empty JSON
+object. Never pass `RunState` itself: doing so would allow mechanic code to mutate
+progression state, couple it to storage shape, and bypass the command boundary.
+
 Gameplay modules are headless adapters between a game's encounter mechanic and the reusable run. The application explicitly constructs a `GameplayModuleRegistry`; there is no import-time or global registration. A module declares a stable namespaced ID, positive version, display metadata, unique stable capabilities, deterministic encounter creation, legal action handling, progress, completion, report creation, action and state validation, and an optional bot strategy.
 
 Applications compose that registry with their configured engine through `createHeadlessRunSession`. This is the supported orchestration boundary for live play, tests, simulation, and replay: hosts call `handleCommand` for lifecycle commands and `handleGameplayAction` with untrusted input. The coordinator creates encounter state, processes signals, persists the versioned envelope, detects completion, and creates the report from the exact validated saved state. Host-authored `store-gameplay-session` and `submit-encounter` commands are rejected by this API.

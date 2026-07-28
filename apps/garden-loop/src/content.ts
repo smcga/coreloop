@@ -220,7 +220,11 @@ const definitions: ContentDefinition[] = [
       "A bean, watering can and space to grow.",
     ),
     currency: 10,
-    ownedDefinitionIds: ["garden-loop:bean", "garden-loop:watering-can"],
+    ownedDefinitionIds: [
+      "garden-loop:bean",
+      "garden-loop:marigold",
+      "garden-loop:watering-can",
+    ],
     capacities: { "playable-object": 3, "passive-modifier": 1, consumable: 2 },
   },
   ...(["compost-reward", "plant-choice", "trait-reward"] as const).map(

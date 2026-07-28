@@ -18,6 +18,7 @@ const context = {
   target: 29,
   rules: [],
   seed: 1234,
+  projection: {},
 };
 
 describe("gameplay module registry", () => {

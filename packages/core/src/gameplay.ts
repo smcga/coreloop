@@ -7,6 +7,7 @@ export interface GameplaySessionState {
   readonly moduleVersion: number;
   readonly encounterId: string;
   readonly data: JsonValue;
+  readonly projection?: { readonly id: string; readonly version: number };
 }
 
 export interface ModuleGameplaySignal {
@@ -32,6 +33,43 @@ export interface GameplayEncounterContext {
   readonly rules: readonly RuleReference[];
   /** A seed derived by advancing the run RNG exactly once. */
   readonly seed: number;
+  /** Application-defined, presentation-free data projected from run ownership. */
+  readonly projection: JsonValue;
+}
+
+export interface InventoryProjectionInstance {
+  readonly instanceId: string;
+  readonly definitionId: string;
+  readonly category: string;
+  readonly tags: readonly string[];
+  readonly storedValues: Readonly<Record<string, number>>;
+  readonly disabled: boolean;
+  readonly destroyed: boolean;
+  readonly attachmentIds: readonly string[];
+  readonly hostInstanceId?: string;
+  readonly transformationHistory: readonly string[];
+}
+
+export interface InventoryProjection {
+  readonly instances: readonly InventoryProjectionInstance[];
+  readonly activeRunUpgradeIds: readonly string[];
+}
+
+export interface GameplayProjectionContext {
+  readonly encounter: import("./engine").EncounterBrief;
+  readonly inventory: InventoryProjection;
+  readonly content: import("./content").RuntimeContentProvider;
+  readonly runTags: readonly string[];
+  readonly encounterTags: readonly string[];
+  readonly allowances: Readonly<Record<string, number>>;
+}
+
+/** A pure, versioned adapter from generic run ownership to module-local JSON. */
+export interface GameplayContextProjection {
+  readonly id: string;
+  readonly version: number;
+  readonly moduleId: string;
+  project(context: GameplayProjectionContext): JsonValue;
 }
 
 export interface RuleReference {

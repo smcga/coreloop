@@ -8,6 +8,7 @@ import {
   createHeadlessRunSession,
   defaultPolicies,
   type RunPolicySet,
+  type GameplayContextProjection,
 } from "@core-loop/core";
 import { gardenContentPack } from "./content";
 import { gardenModule } from "./gameplay";
@@ -98,6 +99,37 @@ export const gardenPolicies: RunPolicySet = {
 };
 
 export const gardenRegistry = new ContentRegistry(gardenContentPack);
+export const gardenGameplayProjection: GameplayContextProjection = {
+  id: "garden-loop:owned-plants",
+  version: 1,
+  moduleId: gardenModule.id,
+  project: ({ inventory }) => ({
+    plants: inventory.instances
+      .filter(
+        (instance) =>
+          instance.category === "playable-object" &&
+          !instance.disabled &&
+          !instance.destroyed &&
+          !instance.hostInstanceId,
+      )
+      .map((instance) => ({
+        instanceId: instance.instanceId,
+        definitionId: instance.definitionId,
+        growth: instance.storedValues.growth ?? 0,
+        water: instance.storedValues.water ?? 0,
+        resilience:
+          (instance.storedValues.resilience ?? 0) +
+          (instance.attachmentIds.some((id) => {
+            const attachment = inventory.instances.find(
+              (candidate) => candidate.instanceId === id,
+            );
+            return attachment?.definitionId === "garden-loop:deep-rooted";
+          })
+            ? 2
+            : 0),
+      })),
+  }),
+};
 export const gardenRunConfiguration = {
   policies: gardenPolicies,
   content: createRuntimeContentProvider(gardenRegistry),
@@ -110,6 +142,7 @@ export const gardenRunConfiguration = {
       rarity.priceMultiplier,
     ]),
   ),
+  gameplayProjection: gardenGameplayProjection,
 } as const;
 
 export const gardenModules = createGameplayModuleRegistry([gardenModule]);
