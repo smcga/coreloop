@@ -281,3 +281,20 @@ The bespoke 0.1 score dispatcher has been replaced by the typed deterministic tr
 `EncounterBrief` is framework-only: ID, ordinal, target, `RuleReference[]`, and `moduleSeed`. Core advances the run RNG once to derive that seed; a module starts a private deterministic generator from it. Module creation cannot mutate the run RNG, and rejected module actions never reach core. The opaque `GameplaySessionState` envelope records module ID/version, encounter ID, and validated JSON. Core stores that envelope but never reads `data`.
 
 Concrete rules are scheduled by application composition. Core persists and announces references; the selected module interprets mechanic rules, generic policies/effects interpret run-level rules, and the application owns prose. `createRunEngine` receives immutable definitions and scheduling/reward hooks without a global registry.
+
+## Internal subsystem ownership
+
+The public `engine.ts` module is intentionally a compatibility facade. Its implementation is composed from internal domain modules; applications must continue to import the package root rather than these paths.
+
+```text
+engine facade → run reducer → encounter preparation
+                         ├── economy inventory/acquisition helpers
+                         └── effect runtime transaction adapter → effect interpreter
+```
+
+- **Run** owns public state/command/event shapes, phase validation, atomic command rejection, transition assembly, and ordered event sequencing. Add a new command and its orchestration in `run/reducer.ts`; keep the domain algorithm in the subsystem that owns it.
+- **Encounters** own gameplay-neutral brief preparation, requirements, report validation/resolution, and encounter cleanup. New app mechanics do not belong here: they remain behind the gameplay-module contract.
+- **Economy** owns inventory capacity/counting, acquisition and attachment compatibility, upgrades, sales, reward acquisition, and deterministic shop candidates/prices. Shop and reward entry points must share the same acquisition rules.
+- **Effects** own the adapter that batches lifecycle signals, translates run state to effect runtime state, copies the result back, and records diagnostics and score ledgers. The generic interpreter remains independent.
+
+A command is handled as one transaction: the reducer validates phase and shape, delegates to a domain operation, assembles the next immutable snapshot and event facts, and finally assigns event sequence numbers. A rejected command returns the original state object; it must not consume RNG values, counters, or currency. Dependency direction is inward from the facade and reducer to domain helpers. Domain helpers never import applications, Phaser/presentation, concrete content packs, or game-specific modules, and they never call back into the reducer.
