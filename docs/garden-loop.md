@@ -47,6 +47,13 @@ resilience, diversity and the raw harvest report are module-owned. Every live
 action goes through `handleGameplayAction`; the UI renders the opaque validated
 module envelope and generic run state.
 
+Bee Friend demonstrates action-to-final-score accumulation without changing the
+module's raw-report contract. A resilient placement increments a saveable value
+on that helper; its final `score` trigger adds the accumulated value to harvest,
+attributes the adjustment to Bee Friend in the ledger, and clears it. Tender
+placements do not accumulate a bonus, and core does not automatically fold
+generic `score-contribution` signals into module reports.
+
 Committed commands and planting actions autosave a framework save envelope.
 Continue restores exact module state and deterministic engine state in encounter,
 reward or shop phases. The Save tools disclosure provides text export/import;

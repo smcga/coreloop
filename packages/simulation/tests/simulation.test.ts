@@ -53,6 +53,22 @@ describe("application-agnostic simulation", () => {
           .diagnostics,
       ).toEqual([]);
   });
+  it("reports Garden action-accumulated Bee Friend score contribution", () => {
+    const report = runSimulation(simulationRegistry, {
+      compositionId: "garden-loop:main",
+      runCount: 1,
+      seedStart: 2,
+      economyStrategyId: "core:cheapest-affordable",
+    });
+    expect(
+      report.contentMetrics.find(
+        (metric) => metric.definitionId === "garden-loop:bee-friend",
+      ),
+    ).toMatchObject({
+      purchased: 1,
+      scoreContribution: { score: 8 },
+    });
+  });
   it("rejects identities and compatibility before consuming seeds", () => {
     expect(() =>
       runSimulation(simulationRegistry, { compositionId: "missing:game" }),

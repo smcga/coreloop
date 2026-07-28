@@ -990,7 +990,7 @@ export function resolveEffects(
                 : undefined,
             roundingAdjustment:
               operation.type === "multiply-score"
-                ? state.score -
+                ? (state.tracks?.[track] ?? state.score) -
                   (before * operation.numerator) / operation.denominator
                 : undefined,
             stage: execution.trigger.stage ?? "additive",

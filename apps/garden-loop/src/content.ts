@@ -98,16 +98,38 @@ const definitions: ContentDefinition[] = [
     attachmentSlots: 1,
     presentation: presentation(
       "Bee Friend",
-      "Adds harvest whenever a resilient plant is placed.",
+      "Adds 2 harvest for each resilient plant placed this session.",
     ),
+    initialStoredValues: { encounterHarvest: 0 },
     triggers: [
       {
         id: "resilient-plant-bonus",
         event: "garden-loop:planted",
-        stage: "additive",
+        stage: "gameplay",
         conditions: { type: "signal-tag", tag: "resilient" },
         operations: [
-          { type: "add-score", amount: { from: "constant", value: 2 } },
+          {
+            type: "stored-value",
+            key: "encounterHarvest",
+            amount: { from: "constant", value: 2 },
+          },
+        ],
+      },
+      {
+        id: "apply-resilient-plant-bonus",
+        event: "score",
+        stage: "additive",
+        operations: [
+          {
+            type: "add-score",
+            amount: { from: "stored", key: "encounterHarvest" },
+          },
+          {
+            type: "stored-value",
+            key: "encounterHarvest",
+            action: "set",
+            amount: { from: "constant", value: 0 },
+          },
         ],
       },
     ],

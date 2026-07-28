@@ -375,9 +375,34 @@ export function runSimulation(
               continue;
             }
             if (state.pendingReward.type === "choice") {
+              const option = state.pendingReward.options.find((candidate) => {
+                const definition = session.definitionFor(
+                  candidate.definitionId,
+                );
+                if (!definition) return false;
+                if (candidate.acquisition.type === "run-upgrade")
+                  return !state.inventory.upgradeIds.includes(definition.id);
+                if (
+                  candidate.acquisition.type !== "instance" ||
+                  !definition.occupiesCapacity
+                )
+                  return true;
+                const count = state.inventory.instances.filter((item) => {
+                  const owned = session.definitionFor(item.definitionId);
+                  return (
+                    owned?.category === definition.category &&
+                    owned.occupiesCapacity
+                  );
+                }).length;
+                return (
+                  count < (state.inventory.capacities[definition.category] ?? 0)
+                );
+              });
+              if (!option)
+                throw new Error("No eligible generated reward option");
               command({
                 type: "choose-reward",
-                optionId: state.pendingReward.options[0]!.id,
+                optionId: option.id,
               });
               continue;
             }
