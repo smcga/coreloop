@@ -4,7 +4,9 @@ The authoritative path is `not-started` → `encounter-ready` → `encounter-act
 
 ## Authoritative run policies
 
-Every constructed engine receives an explicit `RunPolicySet`. Its versioned start, schedule, target, reward, shop-generation, shop-pricing, inventory, and outcome policies own those decisions; core has no fixed run length or economy. The exported `defaultPolicies` bundle preserves Threshold Lab's six-encounter, 10-currency lifecycle. The exact references are exposed by the engine and stored in run state.
+Every constructed engine receives an explicit `RunPolicySet`. Its versioned start, schedule, target, reward, post-encounter route, shop-generation, shop-pricing, inventory, and outcome policies own those decisions; core has no fixed run length or economy. The exported `defaultPolicies` bundle preserves Threshold Lab's six-encounter, 10-currency lifecycle. The exact references are exposed by the engine and stored in run state.
+
+`PostEncounterPolicy` resolves a deterministic destination after outcome and reward determination. The result is stored as `pendingRoute`; reward containers are resolved before a generic `continue` follows that route. A host may choose its screen or animation, but cannot choose whether to visit a shop or skip to the next encounter: mismatched `enter-shop`, `advance`, or `leave-shop` commands are rejected atomically. Shopless games return `next-encounter`; selected-shop games inspect stable schedule entry data; terminal routes return `run-complete` or `run-failed`. Route policies receive no RNG and their identity/version participates in saves and replay compatibility. Historical saves reconstruct the default route from their phase without consuming RNG.
 
 The complete schedule is generated and validated by `start-run`, then persisted with its zero-based `schedulePosition`. Entries contain a stable ID, ordinal, generic kind, and versioned rules. A special encounter is an ordinary schedule entry with different data; advancement always selects the next entry.
 

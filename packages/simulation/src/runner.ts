@@ -415,6 +415,10 @@ export function runSimulation(
             });
             continue;
           }
+          if (state.phase === "reward") {
+            command({ type: "continue" });
+            continue;
+          }
           if (state.phase === "shop") {
             for (const m of metrics.values()) m.eligible++;
             for (const offer of state.shop?.offers ?? [])

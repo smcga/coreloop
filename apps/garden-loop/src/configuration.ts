@@ -103,6 +103,18 @@ export const gardenPolicies: RunPolicySet = {
           ? null
           : "lost",
   },
+  postEncounter: {
+    id: "garden-loop:selected-garden-centres",
+    version: 1,
+    destination: ({ entry, runOutcome }) =>
+      runOutcome === "won"
+        ? { type: "run-complete" }
+        : runOutcome === "lost"
+          ? { type: "run-failed" }
+          : entry.ordinal === 2 || entry.ordinal === 4
+            ? { type: "shop" }
+            : { type: "next-encounter" },
+  },
 };
 
 export const gardenRegistry = new ContentRegistry(gardenContentPack);

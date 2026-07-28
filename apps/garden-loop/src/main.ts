@@ -117,7 +117,7 @@ function render() {
           : ""
       }
       ${state.phase === "encounter-active" && growing ? `<h2>Choose two plants</h2><p>Water allowance ${growing.waterAllowance}${growing.minimumResilience ? ` · resilience needed ${growing.minimumResilience}` : ""}</p><section class="plants">${growing.plants.map((plant, index) => `<button data-plant="${index}" ${growing.planted.includes(index) ? "disabled" : ""}><strong>Plant ${index + 1}</strong><span>Growth ${plant.growth}</span><small>Water ${plant.water} · resilience ${plant.resilience}</small></button>`).join("")}</section><p class="harvest">Harvest <strong>${progress?.score ?? 0}</strong></p>` : ""}
-      ${state.phase === "reward" ? `<h2>${reward ? "Garden reward" : result && result.score >= (state.currentEncounter?.target ?? Infinity) ? "Harvest gathered" : "The first setback is recoverable"}</h2>${reward?.type === "container" ? `<p>${reward.label} is ready.</p><button id="open-reward">Open reward</button>` : reward?.type === "choice" ? `<p>Choose one authored reward.</p><section class="offers">${reward.options.map((option) => `<button data-reward="${option.id}"><strong>${option.label}</strong></button>`).join("")}</section>` : reward?.type === "target" ? `<p>Choose a compatible plant for ${reward.option.label}.</p><div class="actions">${owned.map((item) => `<button class="secondary" data-reward-target="${item.instanceId}">${nameOf(item.definitionId)}</button>`).join("")}</div>` : `<p>Harvest ${result?.score} against a goal of ${state.currentEncounter?.target}. The season continues.</p><div class="actions">${[2, 4].includes(state.encounterNumber) ? `<button id="shop">Visit garden centre</button>` : `<button id="advance">Next growing session</button>`}</div>`}` : ""}
+          ${state.phase === "reward" ? `<h2>${reward ? "Garden reward" : result && result.score >= (state.currentEncounter?.target ?? Infinity) ? "Harvest gathered" : "The first setback is recoverable"}</h2>${reward?.type === "container" ? `<p>${reward.label} is ready.</p><button id="open-reward">Open reward</button>` : reward?.type === "choice" ? `<p>Choose one authored reward.</p><section class="offers">${reward.options.map((option) => `<button data-reward="${option.id}"><strong>${option.label}</strong></button>`).join("")}</section>` : reward?.type === "target" ? `<p>Choose a compatible plant for ${reward.option.label}.</p><div class="actions">${owned.map((item) => `<button class="secondary" data-reward-target="${item.instanceId}">${nameOf(item.definitionId)}</button>`).join("")}</div>` : `<p>Harvest ${result?.score} against a goal of ${state.currentEncounter?.target}. The season continues.</p><div class="actions"><button id="continue">Continue</button></div>`}` : ""}
       ${state.phase === "shop" && state.shop ? `<h2>Garden centre</h2><p>All offers come from the authored Garden content pool.</p><section class="offers">${state.shop.offers.map((offer) => `<button data-buy="${offer.id}"><strong>${nameOf(offer.definitionId)}</strong><span>${offer.price} compost</span></button>`).join("")}</section>${state.pendingAcquisition ? `<h3>Choose a host for ${nameOf(state.pendingAcquisition.offer.definitionId)}</h3><div class="actions">${owned.map((item) => `<button class="secondary" data-target="${item.instanceId}">${nameOf(item.definitionId)}</button>`).join("")}</div>` : ""}<div class="actions"><button class="secondary" id="reroll">Refresh · ${state.shop.rerollPrice}</button><button id="leave">Leave centre</button></div>` : ""}
       ${state.phase === "run-complete" ? `<h2>Season complete!</h2><p>Five growing sessions finished with ${state.currency} compost.</p>` : ""}
       ${state.phase === "run-failed" ? `<h2>Season ended</h2><p>The garden could not recover from this weather.</p>` : ""}
@@ -133,11 +133,8 @@ function render() {
     .querySelector<HTMLButtonElement>("#start")
     ?.addEventListener("click", () => command({ type: "start-encounter" }));
   root
-    .querySelector<HTMLButtonElement>("#shop")
-    ?.addEventListener("click", () => command({ type: "enter-shop" }));
-  root
-    .querySelector<HTMLButtonElement>("#advance")
-    ?.addEventListener("click", () => command({ type: "advance" }));
+    .querySelector<HTMLButtonElement>("#continue")
+    ?.addEventListener("click", () => command({ type: "continue" }));
   root
     .querySelector<HTMLButtonElement>("#reroll")
     ?.addEventListener("click", () => command({ type: "reroll-shop" }));

@@ -93,7 +93,10 @@ describe("generic run engine", () => {
         type: "submit-encounter",
         report: report(state, 999),
       }).state;
-      if (number < 6) state = handle(state, { type: "advance" }).state;
+      if (number < 6) {
+        state = handle(state, { type: "continue" }).state;
+        state = handle(state, { type: "leave-shop" }).state;
+      }
     }
     expect(state.phase).toBe("run-complete");
   });
@@ -208,6 +211,40 @@ describe("authoritative run policies", () => {
       basePrice: 99,
     },
   ];
+  it("stores a direct route and rejects a conflicting shop command atomically", () => {
+    const engine = createRunEngine({
+      policies: {
+        ...fourEncounterPolicies,
+        postEncounter: {
+          id: "test:shopless-route",
+          version: 1,
+          destination: () => ({ type: "next-encounter" }),
+        },
+      },
+    });
+    let state = engine.handle(engine.createInitialState(), {
+      type: "start-run",
+      seed: 91,
+      gameplayModuleId: MODULE,
+    }).state;
+    state = activateWith(engine, state);
+    state = engine.handle(state, {
+      type: "submit-encounter",
+      report: report(state, 2),
+    }).state;
+
+    expect(state.pendingRoute).toEqual({ type: "next-encounter" });
+    const rejected = engine.handle(state, { type: "enter-shop" });
+    expect(rejected.state).toBe(state);
+    expect(rejected.events).toEqual([
+      expect.objectContaining({ type: "command-rejected" }),
+    ]);
+    expect(engine.handle(state, { type: "continue" }).state).toMatchObject({
+      phase: "encounter-ready",
+      schedulePosition: 1,
+      pendingRoute: null,
+    });
+  });
   it("uses schedule, start, inventory, target, reward and outcome policies", () => {
     const engine = createRunEngine({
       policies: fourEncounterPolicies,
@@ -250,7 +287,10 @@ describe("authoritative run policies", () => {
         type: "submit-encounter",
         report: report(state, 1),
       }).state;
-      if (index < 3) state = engine.handle(state, { type: "advance" }).state;
+      if (index < 3) {
+        state = engine.handle(state, { type: "continue" }).state;
+        state = engine.handle(state, { type: "leave-shop" }).state;
+      }
     }
     expect(state.phase).toBe("run-complete");
     expect(state.currency).toBe(49);
@@ -327,7 +367,9 @@ describe("authoritative run policies", () => {
     }).state;
     expect(state.phase).toBe("reward");
     expect(
-      engine.handle(state, { type: "advance" }).state.schedulePosition,
+      engine.handle(engine.handle(state, { type: "continue" }).state, {
+        type: "leave-shop",
+      }).state.schedulePosition,
     ).toBe(1);
   });
 });
