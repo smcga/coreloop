@@ -1,6 +1,7 @@
 import { nextUint32, type RandomState } from "./random";
 import { canonicalJson } from "./canonical";
 import { FrameworkError } from "./errors";
+import { isAllowanceKey } from "./gameplay";
 
 export type NumericComparator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
 export type NumericValue =
@@ -830,7 +831,18 @@ export function resolveEffects(
               });
           }
           events.push({ type: "instance-changed", source: execution.source });
-        } else if (operation.type === "modify-allowance")
+        } else if (operation.type === "modify-allowance") {
+          if (
+            !isAllowanceKey(operation.resource) ||
+            !Number.isSafeInteger(value)
+          ) {
+            diagnostic({
+              type: "invalid-content",
+              message: `Allowance '${operation.resource}' must use a reserved or namespaced key and a safe-integer amount`,
+              source: execution.source,
+            });
+            continue;
+          }
           state = {
             ...state,
             allowances: {
@@ -841,7 +853,7 @@ export function resolveEffects(
               ),
             },
           };
-        else if (
+        } else if (
           operation.type === "emit-signal" ||
           operation.type === "retrigger"
         ) {

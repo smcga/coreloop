@@ -59,7 +59,15 @@ export function createHeadlessRunSession(options: {
     if (!options.configuration.content)
       throw new Error("A content provider is required for gameplay projection");
   }
-  const engine = createRunEngine(options.configuration);
+  const configuration: RunConfiguration = {
+    ...options.configuration,
+    gameplayAllowanceDefaults: Object.fromEntries(
+      options.modules
+        .list()
+        .map((module) => [module.id, { ...(module.allowanceDefaults ?? {}) }]),
+    ),
+  };
+  const engine = createRunEngine(configuration);
 
   const rejected = (
     state: Readonly<RunState>,
@@ -336,6 +344,9 @@ export function createHeadlessRunSession(options: {
         rules: state.currentEncounter.rules,
         seed: state.currentEncounter.moduleSeed,
         projection,
+        allowances: { ...state.effects.allowances },
+        encounterTags: [...state.effects.encounterTags],
+        runTags: [...state.effects.runTags],
       });
       validateSignals(created.signals ?? []);
       const session = envelope(state, created.state);
@@ -384,6 +395,7 @@ export function createHeadlessRunSession(options: {
       const result = module.handleAction(restored.data, action, {
         encounterId: state.currentEncounter!.id,
         encounterNumber: state.currentEncounter!.number,
+        allowances: { ...state.effects.allowances },
       });
       if (!result.accepted)
         return {

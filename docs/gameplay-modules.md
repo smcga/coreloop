@@ -129,4 +129,24 @@ Register it explicitly beside the other adapters, author capability-compatible c
 
 ## Generic creation contract
 
-A module receives `{ encounterId, encounterNumber, target, rules, seed }`. It owns every playable object, allowance, action, threshold, and mechanic-specific modifier in its versioned JSON state. `seed` is obtained by advancing the framework RNG exactly once. Start a module RNG from the seed; never return or independently persist a second authoritative run stream. The coordinator, not the host, stores completed/updated state in `GameplaySessionState` and submits its generic `EncounterReport`.
+A module receives the prepared encounter, projection, tags, and an authoritative
+read-only allowance snapshot. Modules declare supported allowance keys and
+non-negative safe-integer defaults with `allowanceDefaults`; the generic keys
+`action`, `turn`, and `attempt` are reserved, while game-specific keys must be
+namespaced. Content requiring one should use a matching capability such as
+`allowance:action`, allowing incompatible offers to be filtered deterministically.
+
+Allowance lifetime is one encounter. Preparation first installs the module
+defaults, then resolves `encounter-prepared` rule and consumable effects, and
+only then calls `createEncounter`. Values clamp at zero. Every action receives
+the current snapshot, so signals from an accepted action may change the value
+seen by the next action; modules never mutate the map directly. The module must
+validate the current budget before accepting an action. Rejected actions retain
+the previous module state, allowance state, RNG, and sequence counters. Examples
+include selections or hands (`action`), attempts (`attempt`), turns (`turn`),
+and namespaced resources such as `garden-loop:water` or `sports:substitution`.
+
+`seed` is obtained by advancing the framework RNG exactly once. Start a module
+RNG from the seed; never return or independently persist a second authoritative
+run stream. The coordinator, not the host, stores completed/updated state in
+`GameplaySessionState` and submits its generic `EncounterReport`.

@@ -48,8 +48,14 @@ export interface RunConfiguration {
   readonly defaultLoadoutId?: string;
   readonly shopProviders?: readonly ShopPoolProvider[];
   readonly gameplayCapabilities?: Readonly<Record<string, readonly string[]>>;
+  /** Encounter-scoped allowance baselines, supplied by registered modules. */
+  readonly gameplayAllowanceDefaults?: Readonly<
+    Record<string, Readonly<Record<string, number>>>
+  >;
   readonly rarityPriceMultipliers?: Readonly<Record<string, number>>;
   readonly gameplayProjection?: GameplayContextProjection;
+  /** Generic effect packages activated by matching prepared rule references. */
+  readonly encounterRuleEffects?: Readonly<Record<string, EffectDefinition>>;
   /** Immutable after composition; all custom operations execute through it. */
   readonly effectHandlers?: EffectHandlerRegistry;
 }
@@ -792,8 +798,8 @@ function reject(
 const effectDefinitions = (
   configuration: RunConfiguration,
   gameplayModuleId: string,
-): readonly EffectDefinition[] =>
-  definitionsOf(configuration, gameplayModuleId)
+): readonly EffectDefinition[] => [
+  ...definitionsOf(configuration, gameplayModuleId)
     .filter((definition) => definition.triggers)
     .map((definition) => ({
       id: definition.id,
@@ -803,7 +809,9 @@ const effectDefinitions = (
         ...(definition.rarity ? [definition.rarity] : []),
       ],
       triggers: definition.triggers!,
-    }));
+    })),
+  ...Object.values(configuration.encounterRuleEffects ?? {}),
+];
 
 const validGameplaySignals = (signals: readonly GameplaySignal[]): boolean => {
   if (signals.length > 64) return false;
@@ -873,6 +881,14 @@ function resolveSignalBatch(
     readonly limits: Readonly<Record<string, number>>;
   },
 ) {
+  const activeRuleEffects = (state.currentEncounter?.rules ?? [])
+    .filter((rule) => configuration.encounterRuleEffects?.[rule.id])
+    .map((rule) => ({
+      instanceId: `rule:${rule.id}`,
+      definitionId: rule.id,
+      storedValues: {},
+      disabled: false,
+    }));
   let runtime: EffectRuntimeState = {
     score,
     target,
@@ -883,7 +899,11 @@ function resolveSignalBatch(
     currency: state.currency,
     priceModifier: state.effects.priceModifier,
     rng: state.rng,
-    instances: [...state.inventory.instances, ...state.encounterEffects],
+    instances: [
+      ...state.inventory.instances,
+      ...state.encounterEffects,
+      ...activeRuleEffects,
+    ],
     encounterTags: state.effects.encounterTags,
     allowances: state.effects.allowances,
     nextInstanceId: state.nextInstanceId,
@@ -946,7 +966,9 @@ function resolveSignalBatch(
       transformationHistory: prior?.transformationHistory ?? [],
     };
   };
-  const instances = runtime.instances.map(toContent);
+  const instances = runtime.instances
+    .filter((item) => !item.instanceId.startsWith("rule:"))
+    .map(toContent);
   const priorEncounterIds = new Set(
     state.encounterEffects.map((item) => item.instanceId),
   );
@@ -1275,6 +1297,12 @@ function handleCommand(
         nextInstanceId: inventory.instances.length + 1,
         gameplayModuleId: moduleId,
         loadoutId: loadout.id,
+        effects: {
+          ...createInitialRunState(configuration).effects,
+          allowances: {
+            ...(configuration.gameplayAllowanceDefaults?.[moduleId] ?? {}),
+          },
+        },
       } satisfies RunState;
       return {
         state: next,
@@ -2141,7 +2169,11 @@ function handleCommand(
           encounterEffects: [],
           effects: {
             ...state.effects,
-            allowances: {},
+            allowances: {
+              ...(configuration.gameplayAllowanceDefaults?.[
+                state.gameplayModuleId
+              ] ?? {}),
+            },
             encounterTags: [],
           },
           shop: null,

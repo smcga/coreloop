@@ -19,7 +19,8 @@ export type GardenAction = { readonly type: "plant"; readonly index: number };
 export const gardenModule: GameplayModule<GardenState, GardenAction> = {
   id: "garden-loop:planting",
   version: 1,
-  capabilities: ["garden-loop:plants"],
+  capabilities: ["garden-loop:plants", "allowance:action"],
+  allowanceDefaults: { action: 8 },
   createEncounter(context) {
     let rng = createRandom(context.seed);
     const projected = validateGardenProjection(context.projection);
@@ -39,14 +40,11 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
         resilience: Math.max(0, plant.resilience + r.value),
       };
     });
-    let waterPenalty = 0;
     let minimumResilience = 0;
     for (const rule of context.rules) {
       const payload = rule.payload;
       if (!payload || typeof payload !== "object" || Array.isArray(payload))
         continue;
-      if ("waterPenalty" in payload && typeof payload.waterPenalty === "number")
-        waterPenalty = payload.waterPenalty;
       if (
         "minimumResilience" in payload &&
         typeof payload.minimumResilience === "number"
@@ -57,7 +55,7 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
       state: {
         plants,
         planted: [],
-        waterAllowance: 8 - waterPenalty,
+        waterAllowance: context.allowances.action ?? 0,
         minimumResilience,
       },
     };

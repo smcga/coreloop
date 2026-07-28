@@ -81,6 +81,10 @@ export interface GameplayEncounterContext {
   readonly seed: number;
   /** Application-defined, presentation-free data projected from run ownership. */
   readonly projection: JsonValue;
+  /** Authoritative encounter-scoped action budgets after preparation effects. */
+  readonly allowances: Readonly<Record<string, number>>;
+  readonly encounterTags: readonly string[];
+  readonly runTags: readonly string[];
 }
 
 export interface InventoryProjectionInstance {
@@ -127,9 +131,14 @@ export interface RuleReference {
 export interface GameplayActionContext {
   readonly encounterId: string;
   readonly encounterNumber: number;
+  /** Current values, including effects resolved after earlier actions. */
+  readonly allowances: Readonly<Record<string, number>>;
 }
 
-export type GameplayReportContext = GameplayActionContext;
+export type GameplayReportContext = Pick<
+  GameplayActionContext,
+  "encounterId" | "encounterNumber"
+>;
 
 export interface GameplayEncounterCreation<TState> {
   readonly state: TState;
@@ -151,6 +160,8 @@ export interface GameplayModule<TState, TAction> {
   readonly id: string;
   readonly version: number;
   readonly capabilities: readonly string[];
+  /** Supported keys and their non-negative encounter-start defaults. */
+  readonly allowanceDefaults?: Readonly<Record<string, number>>;
   createEncounter(
     context: GameplayEncounterContext,
   ): GameplayEncounterCreation<TState>;
@@ -194,6 +205,18 @@ export class GameplayModuleRegistry {
         throw new Error(
           `Gameplay module '${module.id}' has duplicate capabilities`,
         );
+      for (const [key, value] of Object.entries(
+        module.allowanceDefaults ?? {},
+      )) {
+        if (!isAllowanceKey(key))
+          throw new Error(
+            `Gameplay module '${module.id}' has invalid allowance key '${key}'`,
+          );
+        if (!Number.isSafeInteger(value) || value < 0)
+          throw new Error(
+            `Gameplay module '${module.id}' has invalid allowance '${key}'`,
+          );
+      }
       entries.set(module.id, module);
     }
     this.modules = entries;
@@ -218,6 +241,10 @@ export class GameplayModuleRegistry {
     return module.validateState(envelope.data);
   }
 }
+
+const RESERVED_ALLOWANCE_KEYS = new Set(["action", "turn", "attempt"]);
+export const isAllowanceKey = (key: string): boolean =>
+  RESERVED_ALLOWANCE_KEYS.has(key) || /^[a-z0-9-]+:[a-z0-9-]+$/.test(key);
 
 export const createGameplayModuleRegistry = (
   modules: readonly GameplayModule<unknown, unknown>[],

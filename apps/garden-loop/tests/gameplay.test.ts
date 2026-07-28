@@ -169,6 +169,9 @@ describe("Garden Loop configured season", () => {
       rules: [],
       seed: 9,
       projection,
+      allowances: { action: 8 },
+      encounterTags: [],
+      runTags: [],
     });
     expect(ordinary).toEqual(
       gardenModule.createEncounter({
@@ -178,6 +181,9 @@ describe("Garden Loop configured season", () => {
         rules: [],
         seed: 9,
         projection,
+        allowances: { action: 8 },
+        encounterTags: [],
+        runTags: [],
       }),
     );
     const dry = gardenModule.createEncounter({
@@ -193,6 +199,9 @@ describe("Garden Loop configured season", () => {
       ],
       seed: 9,
       projection,
+      allowances: { action: 7 },
+      encounterTags: [],
+      runTags: [],
     }).state;
     const storm = gardenModule.createEncounter({
       encounterId: "storm",
@@ -207,6 +216,9 @@ describe("Garden Loop configured season", () => {
       ],
       seed: 9,
       projection,
+      allowances: { action: 8 },
+      encounterTags: [],
+      runTags: [],
     }).state;
     expect(dry.waterAllowance).toBe(7);
     expect(storm.minimumResilience).toBe(6);

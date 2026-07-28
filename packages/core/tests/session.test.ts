@@ -82,6 +82,67 @@ const setup = (module = oneActionModule()) => {
 };
 
 describe("headless gameplay session coordinator", () => {
+  it("resolves allowance rule effects before module creation", () => {
+    let received = -1;
+    const module = oneActionModule({
+      allowanceDefaults: { action: 2 },
+      createEncounter: (context) => {
+        received = context.allowances.action!;
+        return { state: { count: 0 } };
+      },
+    });
+    const session = createHeadlessRunSession({
+      configuration: {
+        policies: {
+          ...defaultPolicies,
+          schedule: {
+            ...defaultPolicies.schedule,
+            createSchedule: () => [
+              {
+                id: "special",
+                ordinal: 1,
+                kind: "special",
+                rules: [{ id: "test:short", version: 1 }],
+              },
+            ],
+          },
+        },
+        encounterRuleEffects: {
+          "test:short": {
+            id: "test:short",
+            label: "Short budget",
+            tags: [],
+            triggers: [
+              {
+                id: "shorten",
+                event: "encounter-prepared",
+                operations: [
+                  {
+                    type: "modify-allowance",
+                    resource: "action",
+                    amount: { from: "constant", value: -1 },
+                    lifetime: "encounter",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      modules: createGameplayModuleRegistry([
+        module as GameplayModule<unknown, unknown>,
+      ]),
+    });
+    const ready = session.handleCommand(session.createInitialState(), {
+      type: "start-run",
+      seed: 4,
+      gameplayModuleId: module.id,
+    }).state;
+    expect(ready.effects.allowances).toEqual({ action: 1 });
+    session.handleCommand(ready, { type: "start-encounter" });
+    expect(received).toBe(1);
+  });
+
   it("applies a module-local consumable atomically and validates its state", () => {
     const consumable = {
       id: "test:counter-tool",
