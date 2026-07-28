@@ -4,6 +4,8 @@
 
 The 1.1 architectural integration work is implemented: policies, authored content, economy, effects, gameplay coordination, saves, replay, presentation, and simulation now meet at the same reusable run-session boundary. Threshold Lab, the generated starter, and Garden Loop provide three compositions without application-specific branches in core.
 
+The 1.2 integration acceptance pass makes Garden Loop the end-to-end proof of run-owned content projection, authoritative reward containers and routing, generic gameplay allowances, effect attribution, phase-exact saves, replay and simulation. Stage progression and persistent profile/unlock foundations exist, but expanding Garden's stage or unlock design remains deferred from this proof.
+
 Core Loop is developed in three releases. Each release contains three large delivery issues and must end with a noticeably stronger playable build.
 
 ## 1.1 — Architectural integration and second-game proof

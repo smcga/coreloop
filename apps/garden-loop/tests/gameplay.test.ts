@@ -283,6 +283,102 @@ describe("Garden Loop configured season", () => {
     });
   });
 
+  it("projects a purchased authored plant into the next growing session", () => {
+    const session = createGardenSession();
+    let state = session.handleCommand(session.createInitialState(), {
+      type: "start-run",
+      seed: 0,
+      gameplayModuleId: gardenModule.id,
+    }).state;
+    state = play(state);
+    state = resolveReward(state);
+    state = session.handleCommand(state, { type: "continue" }).state;
+    state = play(state);
+    state = resolveReward(state);
+    state = session.handleCommand(state, { type: "continue" }).state;
+    expect(state.phase).toBe("shop");
+    const offer = state.shop!.offers.find(
+      (candidate) => candidate.category === "playable-object",
+    )!;
+    const purchase = session.handleCommand(state, {
+      type: "buy-offer",
+      offerId: offer.id,
+    });
+    state = purchase.state;
+    const purchased = purchase.events.find(
+      (event) => event.type === "item-purchased",
+    );
+    expect(purchased).toMatchObject({ type: "item-purchased" });
+    if (!purchased || purchased.type !== "item-purchased")
+      throw new Error("Expected the fixed seed to purchase a plant");
+    expect(purchased.instance.instanceId).toBe("item-5");
+    const rngAfterPurchase = state.rng;
+    state = session.handleCommand(state, { type: "leave-shop" }).state;
+    state = session.handleCommand(state, { type: "start-encounter" }).state;
+    const growing = gardenModule.validateState(state.gameplaySession!.data);
+    expect(growing.plants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          instanceId: purchased.instance.instanceId,
+          definitionId: offer.definitionId,
+        }),
+      ]),
+    );
+    expect(rngAfterPurchase).toEqual(purchase.state.rng);
+  });
+
+  it("removes an attached trait with its sold host", () => {
+    const session = createGardenSession();
+    let state = session.handleCommand(session.createInitialState(), {
+      type: "start-run",
+      seed: 12,
+      gameplayModuleId: gardenModule.id,
+    }).state;
+    const host = state.inventory.instances[0]!;
+    state = {
+      ...state,
+      phase: "shop",
+      inventory: {
+        ...state.inventory,
+        instances: [
+          ...state.inventory.instances.map((item) =>
+            item.instanceId === host.instanceId
+              ? { ...item, attachmentIds: ["item-trait"] }
+              : item,
+          ),
+          {
+            instanceId: "item-trait",
+            definitionId: "garden-loop:deep-rooted",
+            storedValues: {},
+            disabled: false,
+            destroyed: false,
+            temporaryTags: [],
+            attachmentIds: [],
+            hostInstanceId: host.instanceId,
+            transformationHistory: [],
+          },
+        ],
+      },
+    };
+    const sold = session.handleCommand(state, {
+      type: "sell-item",
+      instanceId: host.instanceId,
+    });
+    expect(sold.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "item-sold",
+          instanceId: host.instanceId,
+        }),
+      ]),
+    );
+    expect(
+      sold.state.inventory.instances.some((item) =>
+        [host.instanceId, "item-trait"].includes(item.instanceId),
+      ),
+    ).toBe(false);
+  });
+
   it("rejects non-serialisable projections without changing prepared state", () => {
     const session = createHeadlessRunSession({
       configuration: {
