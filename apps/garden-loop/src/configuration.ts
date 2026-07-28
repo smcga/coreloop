@@ -162,6 +162,27 @@ export const gardenRunConfiguration = {
     ]),
   ),
   gameplayProjection: gardenGameplayProjection,
+  encounterRuleEffects: {
+    "garden-loop:dry-spell": {
+      id: "garden-loop:dry-spell",
+      label: "Dry spell water allowance",
+      tags: ["special-rule"],
+      triggers: [
+        {
+          id: "reduce-water",
+          event: "encounter-prepared",
+          operations: [
+            {
+              type: "modify-allowance",
+              resource: "action",
+              amount: { from: "constant", value: -1 },
+              lifetime: "encounter",
+            },
+          ],
+        },
+      ],
+    },
+  },
 } as const;
 
 export const gardenModules = createGameplayModuleRegistry([gardenModule]);

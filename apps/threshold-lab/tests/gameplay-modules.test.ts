@@ -19,6 +19,9 @@ const context = {
   rules: [],
   seed: 1234,
   projection: {},
+  allowances: { action: 4 },
+  encounterTags: [],
+  runTags: [],
 };
 
 describe("gameplay module registry", () => {

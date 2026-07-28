@@ -15,8 +15,8 @@ export const thresholdLabRunConfiguration: RunConfiguration = {
   defaultLoadoutId: "threshold-lab:starter-balanced",
   shopProviders: createShopPoolProviders(registry),
   gameplayCapabilities: {
-    "threshold-lab:combination-grid": ["selection"],
-    "threshold-lab:timing-meter": ["timing"],
+    "threshold-lab:combination-grid": ["selection", "allowance:action"],
+    "threshold-lab:timing-meter": ["timing", "allowance:action"],
   },
   rarityPriceMultipliers: Object.fromEntries(
     thresholdLabContentPack.rarities.map((rarity) => [
@@ -24,6 +24,46 @@ export const thresholdLabRunConfiguration: RunConfiguration = {
       rarity.priceMultiplier,
     ]),
   ),
+  encounterRuleEffects: {
+    "threshold-lab:reduced-selection": {
+      id: "threshold-lab:reduced-selection",
+      label: "Reduced action allowance",
+      tags: ["special-rule"],
+      triggers: [
+        {
+          id: "reduce-action",
+          event: "encounter-prepared",
+          operations: [
+            {
+              type: "modify-allowance",
+              resource: "action",
+              amount: { from: "constant", value: -1 },
+              lifetime: "encounter",
+            },
+          ],
+        },
+      ],
+    },
+    "threshold-lab:fewer-attempts": {
+      id: "threshold-lab:fewer-attempts",
+      label: "Reduced action allowance",
+      tags: ["special-rule"],
+      triggers: [
+        {
+          id: "reduce-action",
+          event: "encounter-prepared",
+          operations: [
+            {
+              type: "modify-allowance",
+              resource: "action",
+              amount: { from: "constant", value: -1 },
+              lifetime: "encounter",
+            },
+          ],
+        },
+      ],
+    },
+  },
   policies: {
     ...defaultPolicies,
     schedule: {
@@ -35,7 +75,7 @@ export const thresholdLabRunConfiguration: RunConfiguration = {
           const suffix =
             gameplayModuleId === "threshold-lab:timing-meter"
               ? ordinal === 3
-                ? "faster-marker"
+                ? "fewer-attempts"
                 : "narrow-zones"
               : ordinal === 3
                 ? "reduced-selection"

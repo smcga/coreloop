@@ -94,7 +94,9 @@ export const combinationGridModule: GameplayModule<
     "pair-pattern",
     "sequence-pattern",
     "attachments",
+    "allowance:action",
   ],
+  allowanceDefaults: { action: 5 },
   createEncounter(context) {
     let rng = createRandom(context.seed);
     const tags = ["cyan", "amber", "violet"] as const;
@@ -114,11 +116,7 @@ export const combinationGridModule: GameplayModule<
       state: {
         objects,
         selectedIds: [],
-        selectionLimit: context.rules.some(
-          (rule) => rule.id === "threshold-lab:reduced-selection",
-        )
-          ? 4
-          : 5,
+        selectionLimit: context.allowances.action ?? 0,
         ruleIds: context.rules.map((rule) => rule.id),
         complete: false,
       },
@@ -274,7 +272,9 @@ export const timingMeterModule: GameplayModule<
     "streak",
     "perfect-result",
     "early-late",
+    "allowance:action",
   ],
+  allowanceDefaults: { action: 4 },
   createEncounter(context) {
     let rng = createRandom(context.seed);
     const speed = randomInteger(rng, 7, 11);
@@ -284,13 +284,10 @@ export const timingMeterModule: GameplayModule<
     const narrow = context.rules.some(
       (rule) => rule.id === "threshold-lab:narrow-zones",
     );
-    const fewer = context.rules.some(
-      (rule) => rule.id === "threshold-lab:fewer-attempts",
-    );
     return {
       state: {
         attempts: [],
-        attemptCount: fewer ? 3 : 4,
+        attemptCount: context.allowances.action ?? 0,
         speedTicks:
           speed.value +
           (context.rules.some(
