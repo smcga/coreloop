@@ -67,6 +67,23 @@ const runtimeDefinition = (
           acquisition: { type: "run-upgrade" as const },
         }
       : {}),
+    ...(definition.category === "reward-container"
+      ? {
+          reward: {
+            type: definition.rewardType,
+            ...(definition.choiceCount !== undefined
+              ? { choiceCount: definition.choiceCount }
+              : {}),
+            ...(definition.poolId ? { poolId: definition.poolId } : {}),
+            ...(definition.currency !== undefined
+              ? { currency: definition.currency }
+              : {}),
+            ...(definition.targetOperation
+              ? { targetOperation: definition.targetOperation }
+              : {}),
+          },
+        }
+      : {}),
   });
 };
 

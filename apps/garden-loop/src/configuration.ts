@@ -62,8 +62,15 @@ export const gardenPolicies: RunPolicySet = {
   },
   reward: {
     id: "garden-loop:compost-reward",
-    version: 1,
-    rewardForEncounter: ({ entry }) => 3 + entry.ordinal,
+    version: 2,
+    rewardForEncounter: ({ entry }) => ({
+      type: "container",
+      definitionId: [
+        "garden-loop:compost-reward",
+        "garden-loop:plant-choice",
+        "garden-loop:trait-reward",
+      ][(entry.ordinal - 1) % 3]!,
+    }),
   },
   shopGeneration: {
     id: "garden-loop:garden-centre-offers",

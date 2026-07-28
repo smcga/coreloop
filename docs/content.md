@@ -119,3 +119,29 @@ numeric vocabulary currently supports `capacity:<category>` and `rerollPrice`.
 
 Only top-level instances may be sold. Selling a host removes its attached
 children with it; an attached child cannot accidentally be sold independently.
+
+## Authoritative rewards
+
+`RewardPolicy.rewardForEncounter` may return a currency, authored-container, or
+sequence descriptor; legacy numeric policies are adapted to currency without
+changing their result. Containers remain unopened in `RunState` until the host
+sends `open-reward-container`. Choice options, stable option IDs, remaining
+choices, selected definitions, and target requests are all serialised there, so
+saves and replays can pause at every step.
+
+Currency containers grant their authored amount. Choice and targeted containers
+reuse authored shop pools and the same acquisition operations used by shops.
+Eligibility and maximum-copy rules are filtered in authored order, then each
+generated option consumes exactly one run-RNG value; an empty pool rejects the
+open command without consuming RNG. Options are distinct within one opening.
+Ordinary instances obey inventory capacity, run upgrades apply their capacity
+changes, and attachments require a compatible owned host and free exclusive
+slot. Rewards are not skippable unless a future authored schema explicitly
+enables it; impossible targets remain pending and rejected commands preserve the
+entire prior state by identity.
+
+```ts
+{ rewardType: "currency", currency: 4 }
+{ rewardType: "choice", choiceCount: 3, poolId: "my-game:rewards" }
+{ rewardType: "targeted", poolId: "my-game:traits", targetOperation: "attach" }
+```

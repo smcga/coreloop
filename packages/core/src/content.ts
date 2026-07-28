@@ -20,6 +20,13 @@ export interface RuntimeContentDefinition {
   readonly sellable?: boolean;
   readonly sellPrice?: number;
   readonly acquisition?: AcquisitionOperation;
+  readonly reward?: {
+    readonly type: "choice" | "currency" | "targeted";
+    readonly choiceCount?: number;
+    readonly poolId?: string;
+    readonly currency?: number;
+    readonly targetOperation?: "attach" | "duplicate" | "transform";
+  };
   readonly hostCategories?: readonly string[];
   readonly requiredHostTags?: readonly string[];
   readonly attachmentSlot?: string;

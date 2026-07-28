@@ -43,6 +43,32 @@ const play = (state: RunState) => {
   return next;
 };
 
+const resolveReward = (state: RunState) => {
+  const session = createGardenSession();
+  let next = state;
+  while (next.pendingReward) {
+    const pending = next.pendingReward;
+    if (pending.type === "container")
+      next = session.handleCommand(next, {
+        type: "open-reward-container",
+      }).state;
+    else if (pending.type === "choice")
+      next = session.handleCommand(next, {
+        type: "choose-reward",
+        optionId: pending.options[0]!.id,
+      }).state;
+    else
+      next = session.handleCommand(next, {
+        type: "choose-reward-target",
+        optionId: pending.option.id,
+        targetInstanceId: next.inventory.instances.find(
+          (item) => !item.hostInstanceId,
+        )!.instanceId,
+      }).state;
+  }
+  return next;
+};
+
 describe("Garden Loop configured season", () => {
   it("projects stable owned plants and applies attached traits", () => {
     const session = createGardenSession();
@@ -204,17 +230,47 @@ describe("Garden Loop configured season", () => {
     ]);
     while (state.phase !== "run-complete" && state.phase !== "run-failed") {
       if (state.phase === "encounter-ready") state = play(state);
-      else if (state.phase === "reward")
-        state = session.handleCommand(state, {
-          type: [2, 4].includes(state.encounterNumber)
-            ? "enter-shop"
-            : "advance",
-        }).state;
-      else if (state.phase === "shop")
+      else if (state.phase === "reward") {
+        state = resolveReward(state);
+        if (state.phase === "reward")
+          state = session.handleCommand(state, {
+            type: [2, 4].includes(state.encounterNumber)
+              ? "enter-shop"
+              : "advance",
+          }).state;
+      } else if (state.phase === "shop")
         state = session.handleCommand(state, { type: "leave-shop" }).state;
     }
     expect(state.encounterNumber).toBeGreaterThanOrEqual(2);
     expect(["run-complete", "run-failed"]).toContain(state.phase);
+  });
+
+  it("resolves authored currency, choice and targeted rewards as saveable run state", () => {
+    const session = createGardenSession();
+    let state = session.handleCommand(session.createInitialState(), {
+      type: "start-run",
+      seed: 72,
+      gameplayModuleId: gardenModule.id,
+    }).state;
+    const seen: string[] = [];
+    for (let encounter = 1; encounter <= 3; encounter++) {
+      state = play(state);
+      expect(state.pendingReward?.type).toBe("container");
+      seen.push(state.pendingReward!.definitionId);
+      const restored = JSON.parse(JSON.stringify(state)) as RunState;
+      expect(resolveReward(restored)).toEqual(resolveReward(state));
+      state = resolveReward(state);
+      if (encounter < 3)
+        state = session.handleCommand(state, { type: "advance" }).state;
+    }
+    expect(seen).toEqual([
+      "garden-loop:compost-reward",
+      "garden-loop:plant-choice",
+      "garden-loop:trait-reward",
+    ]);
+    expect(state.inventory.instances.some((item) => item.hostInstanceId)).toBe(
+      true,
+    );
   });
 
   it("permits the authored first-session setback but fails a later loss", () => {

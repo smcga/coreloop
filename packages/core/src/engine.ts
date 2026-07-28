@@ -36,6 +36,7 @@ import {
   type PolicyReference,
   type RunPolicyKey,
   type RunPolicySet,
+  type EncounterReward,
 } from "./policies";
 
 export const CONTENT_VERSION = 3;
@@ -82,6 +83,39 @@ export interface ShopState {
 }
 export interface PendingAcquisition {
   readonly offer: ShopOffer;
+}
+export interface RewardOption {
+  readonly id: string;
+  readonly definitionId: string;
+  readonly acquisition: AcquisitionOperation;
+}
+export type PendingReward =
+  | {
+      readonly type: "container";
+      readonly definitionId: string;
+      readonly remaining: readonly EncounterReward[];
+      readonly completesRun: boolean;
+    }
+  | {
+      readonly type: "choice";
+      readonly definitionId: string;
+      readonly options: readonly RewardOption[];
+      readonly remainingChoices: number;
+      readonly selectedDefinitionIds: readonly string[];
+      readonly remaining: readonly EncounterReward[];
+      readonly completesRun: boolean;
+    }
+  | {
+      readonly type: "target";
+      readonly definitionId: string;
+      readonly option: RewardOption;
+      readonly selectedDefinitionIds: readonly string[];
+      readonly remaining: readonly EncounterReward[];
+      readonly completesRun: boolean;
+    };
+export interface CompletedReward {
+  readonly definitionId?: string;
+  readonly selectedDefinitionIds: readonly string[];
 }
 export interface EncounterBrief {
   readonly id: string;
@@ -148,6 +182,9 @@ export interface RunState {
   readonly inventory: Inventory;
   readonly shop: ShopState | null;
   readonly pendingAcquisition: PendingAcquisition | null;
+  readonly pendingReward: PendingReward | null;
+  readonly rewardHistory: readonly CompletedReward[];
+  readonly nextRewardOptionId: number;
   readonly nextInstanceId: number;
   readonly nextOfferId: number;
   readonly lastReport: EncounterReport | null;
@@ -192,6 +229,14 @@ export type RunCommand =
       readonly report: EncounterReport;
     }
   | { readonly type: "enter-shop" }
+  | { readonly type: "open-reward-container" }
+  | { readonly type: "choose-reward"; readonly optionId: string }
+  | {
+      readonly type: "choose-reward-target";
+      readonly optionId: string;
+      readonly targetInstanceId: string;
+    }
+  | { readonly type: "skip-reward" }
   | { readonly type: "buy-offer"; readonly offerId: string }
   | {
       readonly type: "choose-acquisition-target";
@@ -220,6 +265,23 @@ type RunEventFact =
       readonly amount: number;
       readonly total: number;
     }
+  | { readonly type: "reward-container-opened"; readonly definitionId: string }
+  | {
+      readonly type: "reward-options-generated";
+      readonly options: readonly RewardOption[];
+    }
+  | {
+      readonly type: "reward-selected";
+      readonly optionId: string;
+      readonly definitionId: string;
+    }
+  | { readonly type: "reward-target-requested"; readonly optionId: string }
+  | {
+      readonly type: "reward-target-resolved";
+      readonly optionId: string;
+      readonly targetInstanceId: string;
+    }
+  | { readonly type: "reward-completed"; readonly definitionId?: string }
   | {
       readonly type: "shop-entered" | "shop-rerolled";
       readonly offers: readonly ShopOffer[];
@@ -397,6 +459,9 @@ export function createInitialRunState(
     inventory,
     shop: null,
     pendingAcquisition: null,
+    pendingReward: null,
+    rewardHistory: [],
+    nextRewardOptionId: 1,
     nextInstanceId: 1,
     nextOfferId: 1,
     lastReport: null,
@@ -580,6 +645,122 @@ function generateShop(
     });
   }
   return { rng, offers, nextOfferId: id, events: eligible.rejected };
+}
+function rewardCandidates(
+  run: Readonly<RunState>,
+  configuration: RunConfiguration,
+  poolId: string,
+  targeted: boolean,
+) {
+  const context = shopContext(run, configuration);
+  return (configuration.shopProviders ?? []).flatMap((provider) =>
+    provider
+      .getCandidates(context)
+      .filter(
+        (candidate) =>
+          candidate.providerId === provider.id &&
+          candidate.providerVersion === provider.version &&
+          candidate.poolId === poolId &&
+          Number.isSafeInteger(candidate.weight) &&
+          candidate.weight > 0 &&
+          (!targeted || candidate.acquisition.type === "attachment") &&
+          (context.copyCounts[candidate.definitionId] ?? 0) <
+            (candidate.maximumCopies ?? Number.POSITIVE_INFINITY) &&
+          !!findDefinition(configuration, candidate.definitionId),
+      ),
+  );
+}
+
+function generateRewardOptions(
+  run: Readonly<RunState>,
+  configuration: RunConfiguration,
+  poolId: string,
+  count: number,
+  targeted: boolean,
+) {
+  let rng = run.rng;
+  let nextId = run.nextRewardOptionId;
+  const remaining = rewardCandidates(run, configuration, poolId, targeted);
+  const options: RewardOption[] = [];
+  // Eligibility is filtered before selection; exactly one RNG value is consumed
+  // for each generated option. Empty pools consume none.
+  while (options.length < Math.min(count, remaining.length)) {
+    const total = remaining.reduce(
+      (sum, candidate) => sum + candidate.weight,
+      0,
+    );
+    const roll = randomInteger(rng, 1, total);
+    rng = roll.state;
+    let cursor = roll.value;
+    let index = 0;
+    for (; index < remaining.length; index++) {
+      cursor -= remaining[index]!.weight;
+      if (cursor <= 0) break;
+    }
+    const candidate = remaining.splice(index, 1)[0]!;
+    options.push({
+      id: `reward-option-${nextId++}`,
+      definitionId: candidate.definitionId,
+      acquisition: candidate.acquisition,
+    });
+  }
+  return { rng, nextId, options };
+}
+
+const flattenRewards = (reward: EncounterReward): readonly EncounterReward[] =>
+  reward.type === "sequence"
+    ? reward.rewards.flatMap(flattenRewards)
+    : [reward];
+
+function beginRewards(
+  state: Readonly<RunState>,
+  rewards: readonly EncounterReward[],
+  completesRun: boolean,
+): TransitionResult {
+  let currency = state.currency;
+  const events: RunEvent[] = [];
+  let index = 0;
+  while (index < rewards.length && rewards[index]!.type === "currency") {
+    const reward = rewards[index++]! as Extract<
+      EncounterReward,
+      { type: "currency" }
+    >;
+    currency += reward.amount;
+    events.push({
+      type: "currency-awarded",
+      amount: reward.amount,
+      total: currency,
+    });
+  }
+  const next = rewards[index];
+  if (next?.type === "container") {
+    return {
+      state: {
+        ...state,
+        currency,
+        phase: "reward",
+        pendingReward: {
+          type: "container",
+          definitionId: next.definitionId,
+          remaining: rewards.slice(index + 1),
+          completesRun,
+        },
+      },
+      events,
+    };
+  }
+  return {
+    state: {
+      ...state,
+      currency,
+      phase: completesRun ? "run-complete" : "reward",
+      pendingReward: null,
+    },
+    events: [
+      ...events,
+      ...(completesRun ? [{ type: "run-completed" as const, currency }] : []),
+    ],
+  };
 }
 function reject(
   state: Readonly<RunState>,
@@ -1220,19 +1401,25 @@ function handleCommand(
           ],
         };
       }
-      const reward = policies.reward.rewardForEncounter({
+      const policyReward = policies.reward.rewardForEncounter({
         entry,
         score: resolved.score,
         target: resolved.target,
         rng: resolved.state.rng,
       });
-      const total = resolved.state.currency + reward,
-        complete = outcome === "won";
+      const reward: EncounterReward =
+        typeof policyReward === "number"
+          ? { type: "currency", amount: policyReward }
+          : policyReward;
+      const complete = outcome === "won";
+      const begun = beginRewards(
+        resolved.state,
+        flattenRewards(reward),
+        complete,
+      );
       return {
         state: {
-          ...resolved.state,
-          phase: complete ? "run-complete" : "reward",
-          currency: total,
+          ...begun.state,
           lastReport: normalizedReport,
           lastOutcome: resolved.outcome,
           scoreBreakdown: resolved.lines,
@@ -1246,13 +1433,288 @@ function handleCommand(
             score: resolved.score,
             target: resolved.target,
           },
-          { type: "currency-awarded", amount: reward, total },
-          ...(complete
-            ? [{ type: "run-completed" as const, currency: total }]
-            : []),
+          ...begun.events,
         ],
       };
     }
+    case "open-reward-container": {
+      const pending = state.pendingReward;
+      if (state.phase !== "reward" || pending?.type !== "container")
+        return reject(
+          state,
+          command,
+          "No unopened reward container is available",
+        );
+      const definition = findDefinition(configuration, pending.definitionId);
+      const reward = definition?.reward;
+      if (!reward)
+        return reject(
+          state,
+          command,
+          "Reward container definition is unavailable",
+        );
+      if (reward.type === "currency") {
+        const amount = reward.currency ?? 0;
+        const next = beginRewards(
+          {
+            ...state,
+            rewardHistory: [
+              ...state.rewardHistory,
+              { definitionId: pending.definitionId, selectedDefinitionIds: [] },
+            ],
+          },
+          [{ type: "currency", amount }, ...pending.remaining],
+          pending.completesRun,
+        );
+        return {
+          state: next.state,
+          events: [
+            {
+              type: "reward-container-opened",
+              definitionId: pending.definitionId,
+            },
+            ...next.events,
+            { type: "reward-completed", definitionId: pending.definitionId },
+          ],
+        };
+      }
+      if (!reward.poolId)
+        return reject(state, command, "Reward pool is not configured");
+      const count =
+        reward.type === "targeted" ? 1 : Math.max(1, reward.choiceCount ?? 1);
+      const generated = generateRewardOptions(
+        state,
+        configuration,
+        reward.poolId,
+        count,
+        reward.type === "targeted",
+      );
+      if (generated.options.length === 0)
+        return reject(state, command, "Reward pool has no eligible candidates");
+      return {
+        state: {
+          ...state,
+          rng: generated.rng,
+          nextRewardOptionId: generated.nextId,
+          pendingReward: {
+            type: "choice",
+            definitionId: pending.definitionId,
+            options: generated.options,
+            remainingChoices: 1,
+            selectedDefinitionIds: [],
+            remaining: pending.remaining,
+            completesRun: pending.completesRun,
+          },
+        },
+        events: [
+          {
+            type: "reward-container-opened",
+            definitionId: pending.definitionId,
+          },
+          { type: "reward-options-generated", options: generated.options },
+        ],
+      };
+    }
+    case "choose-reward": {
+      const pending = state.pendingReward;
+      if (state.phase !== "reward" || pending?.type !== "choice")
+        return reject(state, command, "No reward choice is available");
+      const option = pending.options.find(
+        (item) => item.id === command.optionId,
+      );
+      if (!option) return reject(state, command, "Reward option was not found");
+      const definition = findDefinition(configuration, option.definitionId);
+      if (!definition)
+        return reject(state, command, "Reward definition is unavailable");
+      if (option.acquisition.type === "attachment")
+        return {
+          state: {
+            ...state,
+            pendingReward: { ...pending, type: "target", option },
+          },
+          events: [
+            {
+              type: "reward-selected",
+              optionId: option.id,
+              definitionId: option.definitionId,
+            },
+            { type: "reward-target-requested", optionId: option.id },
+          ],
+        };
+      if (option.acquisition.type === "run-upgrade") {
+        if (state.inventory.upgradeIds.includes(definition.id))
+          return reject(state, command, "Run upgrade is already active");
+        const capacities = { ...state.inventory.capacities };
+        for (const [key, value] of Object.entries(
+          definition.upgradeChanges ?? {},
+        ))
+          if (key.startsWith("capacity:"))
+            capacities[key.slice(9)] = (capacities[key.slice(9)] ?? 0) + value;
+        const completed = beginRewards(
+          {
+            ...state,
+            inventory: {
+              ...state.inventory,
+              capacities,
+              upgradeIds: [...state.inventory.upgradeIds, definition.id],
+            },
+            rewardHistory: [
+              ...state.rewardHistory,
+              {
+                definitionId: pending.definitionId,
+                selectedDefinitionIds: [definition.id],
+              },
+            ],
+          },
+          pending.remaining,
+          pending.completesRun,
+        );
+        return {
+          state: completed.state,
+          events: [
+            {
+              type: "reward-selected",
+              optionId: option.id,
+              definitionId: definition.id,
+            },
+            { type: "run-upgrade-applied", definitionId: definition.id },
+            { type: "reward-completed", definitionId: pending.definitionId },
+            ...completed.events,
+          ],
+        };
+      }
+      const count = state.inventory.instances.filter(
+        (item) =>
+          findDefinition(configuration, item.definitionId)?.category ===
+            definition.category &&
+          findDefinition(configuration, item.definitionId)?.occupiesCapacity,
+      ).length;
+      if (
+        definition.occupiesCapacity &&
+        count >= (state.inventory.capacities[definition.category] ?? 0)
+      )
+        return reject(state, command, "Inventory is full");
+      const instance = createInstance(definition, state.nextInstanceId);
+      const completed = beginRewards(
+        {
+          ...state,
+          nextInstanceId: state.nextInstanceId + 1,
+          inventory: {
+            ...state.inventory,
+            instances: [...state.inventory.instances, instance],
+          },
+          rewardHistory: [
+            ...state.rewardHistory,
+            {
+              definitionId: pending.definitionId,
+              selectedDefinitionIds: [definition.id],
+            },
+          ],
+        },
+        pending.remaining,
+        pending.completesRun,
+      );
+      return {
+        state: completed.state,
+        events: [
+          {
+            type: "reward-selected",
+            optionId: option.id,
+            definitionId: definition.id,
+          },
+          { type: "reward-completed", definitionId: pending.definitionId },
+          ...completed.events,
+        ],
+      };
+    }
+    case "choose-reward-target": {
+      const pending = state.pendingReward;
+      if (
+        state.phase !== "reward" ||
+        pending?.type !== "target" ||
+        pending.option.id !== command.optionId
+      )
+        return reject(state, command, "No matching reward target is required");
+      const operation = pending.option.acquisition;
+      const host = state.inventory.instances.find(
+        (item) =>
+          item.instanceId === command.targetInstanceId && !item.hostInstanceId,
+      );
+      const hostDefinition =
+        host && findDefinition(configuration, host.definitionId);
+      const definition = findDefinition(
+        configuration,
+        pending.option.definitionId,
+      );
+      if (
+        operation.type !== "attachment" ||
+        !host ||
+        !hostDefinition ||
+        !definition ||
+        !operation.hostCategories.includes(hostDefinition.category) ||
+        operation.requiredHostTags?.some(
+          (tag) => !hostDefinition.tags.includes(tag),
+        )
+      )
+        return reject(state, command, "Reward target is incompatible");
+      if (
+        operation.slot &&
+        host.attachmentIds.some(
+          (id) =>
+            findDefinition(
+              configuration,
+              state.inventory.instances.find((item) => item.instanceId === id)
+                ?.definitionId ?? "",
+            )?.attachmentSlot === operation.slot,
+        )
+      )
+        return reject(state, command, "Attachment slot is occupied");
+      const child = {
+        ...createInstance(definition, state.nextInstanceId),
+        hostInstanceId: host.instanceId,
+      };
+      const instances = [
+        ...state.inventory.instances.map((item) =>
+          item.instanceId === host.instanceId
+            ? {
+                ...item,
+                attachmentIds: [...item.attachmentIds, child.instanceId],
+              }
+            : item,
+        ),
+        child,
+      ];
+      const completed = beginRewards(
+        {
+          ...state,
+          nextInstanceId: state.nextInstanceId + 1,
+          inventory: { ...state.inventory, instances },
+          rewardHistory: [
+            ...state.rewardHistory,
+            {
+              definitionId: pending.definitionId,
+              selectedDefinitionIds: [definition.id],
+            },
+          ],
+        },
+        pending.remaining,
+        pending.completesRun,
+      );
+      return {
+        state: completed.state,
+        events: [
+          {
+            type: "reward-target-resolved",
+            optionId: pending.option.id,
+            targetInstanceId: host.instanceId,
+          },
+          { type: "reward-completed", definitionId: pending.definitionId },
+          ...completed.events,
+        ],
+      };
+    }
+    case "skip-reward":
+      return reject(state, command, "This reward cannot be skipped");
     case "enter-shop": {
       if (state.phase !== "reward")
         return reject(state, command, "A won encounter reward is required");
