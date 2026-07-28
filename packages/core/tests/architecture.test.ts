@@ -11,10 +11,14 @@ const source = (path: string) =>
   readFileSync(resolve(import.meta.dirname, path), "utf8");
 
 describe("core subsystem boundaries", () => {
-  it("keeps the public engine as a small facade", () => {
+  it("keeps the public engine and reducer as small orchestration facades", () => {
     const engine = source("../src/engine.ts");
     expect(engine.split("\n").length).toBeLessThan(60);
     expect(engine).toContain('from "./run/reducer"');
+    const reducer = source("../src/run/reducer.ts");
+    expect(reducer.split("\n").length).toBeLessThan(300);
+    expect(reducer).toContain('from "../effects/transaction"');
+    expect(reducer).toContain('from "./lifecycle"');
   });
 
   it("prevents inward dependencies on applications, presentation, or gameplay modules", () => {
@@ -27,6 +31,16 @@ describe("core subsystem boundaries", () => {
       expect(contents).not.toMatch(/from ["'][^"']*(apps|phaser)[/"']/);
       expect(contents).not.toMatch(/from ["'][^"']*gameplay-modules/);
     }
+  });
+
+  it("keeps subsystem dependencies directed toward contracts and runtimes", () => {
+    const transaction = source("../src/effects/transaction.ts");
+    const lifecycle = source("../src/run/lifecycle.ts");
+    expect(transaction).toContain('from "../run/contracts"');
+    expect(transaction).not.toMatch(
+      /from ["'][^"']*run\/(reducer|lifecycle)["']/,
+    );
+    expect(lifecycle).not.toMatch(/from ["']\.\/reducer["']/);
   });
 
   it("derives a brief while advancing the RNG exactly once", () => {

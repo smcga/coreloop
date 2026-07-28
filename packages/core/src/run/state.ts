@@ -16,4 +16,4 @@ export type {
   ScoreLine,
   ShopOffer,
   ShopState,
-} from "./reducer";
+} from "./contracts";

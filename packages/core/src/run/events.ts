@@ -1,1 +1,1 @@
-export type { RunEvent, TransitionResult } from "./reducer";
+export type { RunEvent, TransitionResult } from "./contracts";

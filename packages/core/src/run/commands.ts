@@ -1,1 +1,1 @@
-export type { RunCommand } from "./reducer";
+export type { RunCommand } from "./contracts";
