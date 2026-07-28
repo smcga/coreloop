@@ -37,7 +37,15 @@ Generic operations add and multiply score, modify target, gain/lose currency, al
 
 Temporary instances declare encounter expiry. `expireEncounterEffects` removes them and clears encounter tags idempotently. Stored values remain on owned instances and therefore survive saves.
 
-Custom operations use `EffectHandlerRegistry`. IDs must be namespaced, duplicate registration throws, and an unknown shipped handler fails validation. A handler receives only the deterministic state, signal, source, and typed custom operation and returns framework values. Ordinary content must use generic operations instead.
+Custom operations use an explicitly composed `EffectHandlerRegistry`, supplied as
+`RunConfiguration.effectHandlers`. IDs must be namespaced, duplicate registration
+throws, and an unknown shipped handler fails when the configured engine is created.
+A handler receives cloned deterministic state, signal, source, and the typed custom
+operation. Its complete return value is canonical JSON validated before commit.
+Returned signals do not keep handler-authored IDs, sequence, source, context, or
+depth: the coordinator assigns those fields, appends the signals to the same FIFO
+queue, and applies the ordinary depth, signal, retrigger, and operation limits.
+Ordinary content must use generic operations instead.
 
 ## Chaining, retriggers, and safety
 
@@ -80,4 +88,48 @@ Cyan Focus, Pair Amplifier, Sequence Learner, First Echo, High Risk, Perfect Rew
 
 ## Module-specific operations
 
-Prefer generic trigger conditions and operations. If an operation changes mechanic state, define a namespaced custom handler reference on the consumable/effect, handle it in application composition or the gameplay module, validate the returned module envelope, and commit it atomically. Core must not branch on the handler, item, module, or rule ID.
+Prefer generic trigger conditions and operations. Use a generic custom handler only
+when generic run/effect state must change in a way the operation vocabulary cannot
+express. If an operation changes opaque mechanic state, define a versioned custom
+handler reference on the consumable and install a `GameplayOperationHandler` in the
+application's `GameplayOperationRegistry` instead. Core must never branch on the
+handler, item, module, or rule ID.
+
+The headless session accepts module-local consumables during an active encounter.
+It restores the current envelope, invokes the handler with cloned JSON projections,
+canonicalises the result, asks the selected module to validate the returned state,
+validates emitted module signals, stores the state and processes those signals, and
+only then consumes the item. A throw, missing/wrong handler version, unsupported
+module, malformed signal, or invalid module state returns the exact original run
+state (including RNG and counters).
+
+```ts
+const operations = new GameplayOperationRegistry([
+  {
+    id: "example:replace-object",
+    version: 1,
+    supportedModuleIds: ["example:grid"],
+    apply: ({ gameplay, operation }) => ({
+      gameplay: replaceObject(gameplay, operation),
+      signals: [
+        {
+          type: "example:object-replaced",
+          tags: [],
+          values: { count: 1 },
+        },
+      ],
+    }),
+  },
+]);
+
+createHeadlessRunSession({ configuration, modules, operations });
+```
+
+The content reference must use the same ID and integer version. Record every
+installed generic and gameplay-operation reference in save and replay compatibility
+metadata; changing code without increasing its version breaks deterministic
+compatibility. Handlers are synchronous deterministic adapters: they must not use
+Phaser, DOM/storage, wall-clock values, network access, `Math.random()`, mutate host
+session objects directly, or return non-serialisable values. Live play, replay, bots,
+and simulation should all call `createHeadlessRunSession`, never invoke handlers or
+write `GameplaySessionState` themselves.

@@ -1,5 +1,6 @@
 import type {
   GameplayModuleRegistry,
+  GameplayOperationRegistry,
   RunConfiguration,
   RunState,
 } from "@core-loop/core";
@@ -44,6 +45,7 @@ export interface SimulationComposition {
   readonly content: { readonly id: string; readonly version: number };
   readonly configuration: RunConfiguration;
   readonly modules: GameplayModuleRegistry;
+  readonly operations?: GameplayOperationRegistry;
   readonly policySets: readonly {
     readonly id: string;
     readonly version: number;

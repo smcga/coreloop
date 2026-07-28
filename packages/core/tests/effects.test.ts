@@ -62,6 +62,61 @@ const definition = (conditions?: EffectCondition): EffectDefinition => ({
 });
 
 describe("generic effect runtime", () => {
+  it("processes custom handler signals through the ordinary FIFO queue", () => {
+    const handlers = new EffectHandlerRegistry();
+    handlers.register("test:emit-bonus", ({ state }) => ({
+      state: { ...state, currency: state.currency + 2 },
+      signals: [
+        {
+          id: "ignored",
+          type: "test:bonus",
+          tags: [],
+          values: { amount: 4 },
+          context: signal().context,
+        },
+      ],
+    }));
+    const result = resolveEffects(
+      runtime(),
+      signal(),
+      [
+        {
+          id: "test:item",
+          label: "Emitter",
+          tags: [],
+          triggers: [
+            {
+              id: "emit",
+              event: "score",
+              operations: [{ type: "custom", handlerId: "test:emit-bonus" }],
+            },
+            {
+              id: "consume",
+              event: "test:bonus",
+              operations: [
+                {
+                  type: "add-score",
+                  amount: { from: "signal", key: "amount" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      handlers,
+    );
+    expect(result.state).toMatchObject({ score: 14, currency: 7 });
+    expect(result.emittedSignals[0]).toMatchObject({
+      id: "signal-1.2",
+      sequence: 2,
+      type: "test:bonus",
+      depth: 1,
+    });
+    expect(result.events.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(["signal-emitted", "trigger-resolved"]),
+    );
+  });
+
   it("modifies, caps, and floors only the named track with attributed ordering", () => {
     const state = {
       ...runtime(),

@@ -7,6 +7,7 @@ import {
   type GameplaySessionState,
   type JsonValue,
   type ModuleGameplaySignal,
+  GameplayOperationRegistry,
 } from "./gameplay";
 import {
   type EncounterReport,
@@ -44,6 +45,7 @@ interface ErasedGameplayModule {
 export function createHeadlessRunSession(options: {
   readonly configuration: RunConfiguration;
   readonly modules: GameplayModuleRegistry;
+  readonly operations?: GameplayOperationRegistry;
 }) {
   const configuredProjection = options.configuration.gameplayProjection;
   if (configuredProjection) {
@@ -201,6 +203,82 @@ export function createHeadlessRunSession(options: {
         command.type,
         "This command is internal to the gameplay coordinator",
       );
+    if (command.type === "use-consumable") {
+      const owned = state.inventory.instances.find(
+        (item) => item.instanceId === command.instanceId,
+      );
+      let definition;
+      try {
+        definition = owned
+          ? options.configuration.content?.getDefinition(owned.definitionId)
+          : undefined;
+      } catch {
+        definition = undefined;
+      }
+      if (definition?.use?.type === "custom") {
+        try {
+          if (state.phase !== "encounter-active")
+            return rejected(
+              state,
+              command.type,
+              "Module-local consumables require an active encounter",
+            );
+          const reference = definition.use.handler;
+          const handler = options.operations?.get(reference.id);
+          if (!handler)
+            throw new Error(
+              `Gameplay operation '${reference.id}' is not installed`,
+            );
+          if (handler.version !== reference.version)
+            throw new Error(
+              `Gameplay operation '${reference.id}' version ${reference.version} is incompatible with installed version ${handler.version}`,
+            );
+          if (
+            handler.supportedModuleIds &&
+            !handler.supportedModuleIds.includes(state.gameplayModuleId)
+          )
+            throw new Error(
+              `Gameplay operation '${reference.id}' does not support module '${state.gameplayModuleId}'`,
+            );
+          const restored = restore(state);
+          const result = handler.apply({
+            run: structuredClone({
+              phase: state.phase,
+              currency: state.currency,
+              encounterNumber: state.encounterNumber,
+              encounterId: state.currentEncounter?.id ?? null,
+            }),
+            gameplay: structuredClone(state.gameplaySession!.data),
+            operation: structuredClone(reference.payload ?? {}),
+          });
+          canonicalJson(result);
+          validateSignals(result.signals ?? []);
+          const module = restored.module as unknown as ErasedGameplayModule;
+          module.validateState(result.gameplay);
+          const session = envelope(state, result.gameplay);
+          const stored = engine.handle(state, {
+            type: "store-gameplay-session",
+            session,
+            signals: result.signals ?? [],
+            actionId: reference.id,
+          });
+          if (stored.state === state) return stored;
+          const consumed = engine.handle(stored.state, command);
+          return {
+            state: consumed.state,
+            events: [...stored.events, ...consumed.events],
+          };
+        } catch (cause) {
+          return rejected(
+            state,
+            command.type,
+            cause instanceof Error
+              ? cause.message
+              : "Gameplay operation failed",
+          );
+        }
+      }
+    }
     if (command.type !== "start-encounter")
       return engine.handle(state, command);
     if (state.phase !== "encounter-ready" || !state.currentEncounter)

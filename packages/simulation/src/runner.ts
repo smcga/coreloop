@@ -192,6 +192,7 @@ export function runSimulation(
   const session = createHeadlessRunSession({
     configuration: composition.configuration,
     modules: composition.modules,
+    ...(composition.operations ? { operations: composition.operations } : {}),
   });
   const definitions =
     composition.configuration.content?.listDefinitions({

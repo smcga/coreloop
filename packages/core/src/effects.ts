@@ -908,6 +908,26 @@ export function resolveEffects(
             canonicalJson(result);
             state = result.state ?? state;
             events.push(...(result.events ?? []));
+            for (const emitted of result.signals ?? []) {
+              const child: GameSignal = {
+                ...structuredClone(emitted),
+                id: `${firstSignal.id}.${nextSequence}`,
+                sequence: nextSequence++,
+                source: execution.source,
+                context: structuredClone(signal.context),
+                depth: (signal.depth ?? 0) + 1,
+              };
+              // Validate the coordinator-owned identity and context as well as the
+              // handler-authored payload before it enters the shared FIFO queue.
+              canonicalJson(child);
+              queue.push(child);
+              emittedSignals.push(child);
+              events.push({
+                type: "signal-emitted",
+                signalId: child.id,
+                source: execution.source,
+              });
+            }
           }
         }
         if (
