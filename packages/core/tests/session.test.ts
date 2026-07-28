@@ -4,6 +4,7 @@ import {
   createHeadlessRunSession,
   defaultPolicies,
   type GameplayModule,
+  type RunPolicySet,
 } from "../src";
 
 type State = { readonly count: number };
@@ -81,6 +82,83 @@ const setup = (module = oneActionModule()) => {
 };
 
 describe("headless gameplay session coordinator", () => {
+  it("runs a two-track report through generic encounter and run outcome policies", () => {
+    const module = oneActionModule({
+      id: "test:two-track",
+      createReport: (_state, context) => ({
+        encounterId: context.encounterId,
+        score: 0,
+        tracks: { score: 0, "test:profit": 12, "test:efficiency": 8 },
+        objectives: { "test:completed": true },
+        resources: { "test:turns-remaining": 2 },
+        tags: ["test:efficient"],
+        metrics: {},
+        statistics: { "test:moves": 3 },
+        signals: [],
+      }),
+    });
+    const policies: RunPolicySet = {
+      ...defaultPolicies,
+      schedule: {
+        ...defaultPolicies.schedule,
+        id: "test:single-encounter",
+        createSchedule: () => [
+          { id: "proof-1", ordinal: 1, kind: "ordinary", rules: [] },
+        ],
+      },
+      target: {
+        ...defaultPolicies.target,
+        id: "test:two-track-requirements",
+        targetForEncounter: () => 0,
+        requirementsForEncounter: () => ({
+          targets: { "test:profit": 10, "test:efficiency": 7 },
+          objectives: [{ key: "test:completed", expected: true }],
+          limits: { "test:turns": 5 },
+        }),
+      },
+      encounterOutcome: {
+        id: "test:profit-and-efficiency",
+        version: 1,
+        evaluate: ({ requirements, tracks, objectives }) => {
+          const success =
+            tracks["test:profit"]! >= requirements.targets["test:profit"]! &&
+            tracks["test:efficiency"]! >=
+              requirements.targets["test:efficiency"]! &&
+            objectives["test:completed"] === true;
+          return {
+            status: success ? ("completed" as const) : ("lost" as const),
+            success,
+            reasons: [{ code: "test:combined-objectives" }],
+          };
+        },
+      },
+    };
+    const session = createHeadlessRunSession({
+      configuration: { policies },
+      modules: createGameplayModuleRegistry([
+        module as GameplayModule<unknown, unknown>,
+      ]),
+    });
+    let state = session.handleCommand(session.createInitialState(), {
+      type: "start-run",
+      seed: 36,
+      gameplayModuleId: module.id,
+    }).state;
+    state = session.handleCommand(state, { type: "start-encounter" }).state;
+    const result = session.handleGameplayAction(state, { type: "finish" });
+    expect(result.state.phase).toBe("run-complete");
+    expect(result.state.lastReport?.tracks).toEqual({
+      score: 0,
+      "test:profit": 12,
+      "test:efficiency": 8,
+    });
+    expect(result.state.lastOutcome).toEqual({
+      status: "completed",
+      success: true,
+      reasons: [{ code: "test:combined-objectives" }],
+    });
+  });
+
   it("initialises state and automatically creates the authoritative report", () => {
     const { session, state } = setup();
     expect(state.gameplaySession?.data).toEqual({ count: 0 });

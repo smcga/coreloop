@@ -33,6 +33,10 @@ export interface TargetPolicy extends VersionedPolicy {
     readonly entry: EncounterScheduleEntry;
     readonly rng: RandomState;
   }): number;
+  requirementsForEncounter?(context: {
+    readonly entry: EncounterScheduleEntry;
+    readonly rng: RandomState;
+  }): import("./engine").EncounterRequirements;
 }
 export interface RewardPolicy extends VersionedPolicy {
   /** Policy RNG is an immutable snapshot. Reward calculation never advances run RNG. */
@@ -79,9 +83,33 @@ export interface ContentCompatibilityPolicy extends VersionedPolicy {
   }): boolean;
 }
 export type RunOutcome = "won" | "lost";
+export interface EncounterOutcome {
+  readonly status: "won" | "lost" | "draw" | "completed";
+  readonly success: boolean;
+  readonly reasons: readonly OutcomeReason[];
+}
+export interface OutcomeReason {
+  readonly code: string;
+  readonly key?: string;
+  readonly expected?: number | boolean;
+  readonly actual?: number | boolean;
+}
+export interface EncounterOutcomePolicy extends VersionedPolicy {
+  evaluate(context: {
+    readonly requirements: import("./engine").EncounterRequirements;
+    readonly tracks: Readonly<Record<string, number>>;
+    readonly objectives: Readonly<Record<string, boolean>>;
+    readonly resources: Readonly<Record<string, number>>;
+    readonly tags: readonly string[];
+    readonly statistics: Readonly<Record<string, number>>;
+    readonly entry: EncounterScheduleEntry;
+  }): EncounterOutcome;
+}
 export interface RunOutcomePolicy extends VersionedPolicy {
   evaluate(context: {
     readonly entry: EncounterScheduleEntry;
+    readonly encounterOutcome?: EncounterOutcome;
+    /** @deprecated Use encounterOutcome.success. */
     readonly encounterWon: boolean;
     readonly hasNextEncounter: boolean;
   }): RunOutcome | null;
@@ -94,6 +122,7 @@ export interface RunPolicySet {
   readonly shopGeneration: ShopGenerationPolicy;
   readonly shopPricing: ShopPricingPolicy;
   readonly inventory: InventoryPolicy;
+  readonly encounterOutcome: EncounterOutcomePolicy;
   readonly outcome: RunOutcomePolicy;
 }
 export type RunPolicyKey = keyof RunPolicySet;
@@ -188,11 +217,39 @@ export const defaultPolicies: RunPolicySet = {
     version: 1,
     limitFor: (_category, loadoutLimit) => loadoutLimit,
   },
+  encounterOutcome: {
+    id: "core:scalar-threshold-outcome",
+    version: 1,
+    evaluate: ({ requirements, tracks }) => {
+      const target = requirements.targets.score;
+      const score = tracks.score;
+      const success =
+        typeof target === "number" &&
+        typeof score === "number" &&
+        score >= target;
+      return {
+        status: success ? "won" : "lost",
+        success,
+        reasons: [
+          {
+            code: success ? "core:target-met" : "core:target-missed",
+            key: "score",
+            ...(target === undefined ? {} : { expected: target }),
+            ...(score === undefined ? {} : { actual: score }),
+          },
+        ],
+      };
+    },
+  },
   outcome: {
     id: "core:six-win-outcome",
     version: 1,
-    evaluate: ({ encounterWon, hasNextEncounter }) =>
-      !encounterWon ? "lost" : hasNextEncounter ? null : "won",
+    evaluate: ({ encounterOutcome, encounterWon, hasNextEncounter }) =>
+      !(encounterOutcome?.success ?? encounterWon)
+        ? "lost"
+        : hasNextEncounter
+          ? null
+          : "won",
   },
 };
 
@@ -219,6 +276,7 @@ export function resolvePolicySet(
     "shopGeneration",
     "shopPricing",
     "inventory",
+    "encounterOutcome",
     "outcome",
   ];
   for (const key of keys)

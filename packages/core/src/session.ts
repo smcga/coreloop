@@ -114,11 +114,27 @@ export function createHeadlessRunSession(options: {
     canonicalJson(report);
     if (report.encounterId !== encounterId)
       throw new Error("Report does not match the encounter");
+    const namespacedNumericMaps = [
+      report.tracks ?? {},
+      report.resources ?? {},
+      report.statistics ?? {},
+    ];
     if (
       !Number.isFinite(report.score) ||
-      Object.values(report.metrics).some((v) => !Number.isFinite(v))
+      namespacedNumericMaps.some((values) =>
+        Object.entries(values).some(
+          ([key, value]) =>
+            (!key.includes(":") && key !== "score") || !Number.isFinite(value),
+        ),
+      ) ||
+      Object.values(report.metrics).some((value) => !Number.isFinite(value)) ||
+      Object.keys(report.objectives ?? {}).some(
+        (key) => !key.includes(":") && key !== "target",
+      )
     )
-      throw new Error("Report score and metrics must be finite");
+      throw new Error(
+        "Report keys must be namespaced and numeric values must be finite",
+      );
     validateSignals(report.signals);
   };
 
@@ -145,6 +161,7 @@ export function createHeadlessRunSession(options: {
         encounterId: state.currentEncounter.id,
         encounterNumber: state.currentEncounter.number,
         target: state.currentEncounter.target,
+        requirements: state.currentEncounter.requirements,
         rules: state.currentEncounter.rules,
         seed: state.currentEncounter.moduleSeed,
       });

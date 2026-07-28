@@ -31,7 +31,13 @@ Historical envelopes are handled by the explicit save migration graph. Current e
 
 ## Actions, signals, reports, and deterministic state
 
-`createEncounter` receives the encounter identity, number, target, compatible special-rule ID and payload, and a derived module seed. `validateAction` narrows browser, replay, bot, or simulation input before `handleAction` receives it. Accepted actions return new serialisable state and generic signals. `createReport` returns the same `EncounterReport` used by the run engine: final score, tags, numeric metrics, and signals. The coordinator calls `createReport` only after `isComplete` succeeds. Core compares score and target; it does not calculate patterns or accuracy.
+### Named encounter results (save format 9)
+
+Modules may report named numeric tracks, boolean objectives, resources, tags, and statistics. Encounter briefs likewise carry generic targets, objective requirements, and limits. A versioned encounter-outcome policy interprets those values; the reducer does not embed mechanic-specific comparisons. The scalar convention remains concise: set `score`, omit the generic maps, and use the default policies. Core normalises it to `tracks.score`, while `EncounterBrief.target`, `lastReport.score`, and scalar breakdowns remain compatibility views.
+
+Non-framework keys in tracks, objectives, resources, requirements, and statistics must be namespaced (for example `my-game:efficiency`); `score` and the legacy metric map are compatibility vocabulary. Numeric values must be finite. Gameplay creation now also receives `requirements`; `target` remains the scalar convenience value.
+
+`createEncounter` receives the encounter identity, number, requirements and scalar target view, compatible special-rule ID and payload, and a derived module seed. `validateAction` narrows browser, replay, bot, or simulation input before `handleAction` receives it. Accepted actions return new serialisable state and generic signals. `createReport` returns the same generic `EncounterReport` used by the run engine. The coordinator calls `createReport` only after `isComplete` succeeds; the selected encounter-outcome policy evaluates it.
 
 Combination Grid owns generated numbered objects, selected IDs, its selection allowance, pair/sequence/tag calculations, and grid actions. Timing Meter owns attempts, motion parameters, accuracy zones, streaks, and timing actions. Neither module imports Phaser.
 

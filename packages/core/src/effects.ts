@@ -6,7 +6,12 @@ export type NumericComparator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
 export type NumericValue =
   | { readonly from: "constant"; readonly value: number }
   | { readonly from: "signal" | "metric" | "stored"; readonly key: string }
-  | { readonly from: "score" | "target" | "currency" | "owned-count" };
+  | { readonly from: "score" | "target" | "currency" | "owned-count" }
+  | {
+      readonly from:
+        "report-track" | "resolved-track" | "named-target" | "limit";
+      readonly key: string;
+    };
 
 export type EffectCondition =
   | { readonly type: "signal-type"; readonly value: string }
@@ -67,14 +72,28 @@ export type EffectStage =
 export type EffectOperation =
   | {
       readonly type: "add-score";
+      readonly track?: string;
       readonly amount: NumericValue;
       readonly factor?: number;
       readonly label?: string;
     }
   | {
       readonly type: "multiply-score";
+      readonly track?: string;
       readonly numerator: number;
       readonly denominator: number;
+      readonly label?: string;
+    }
+  | {
+      readonly type: "cap-score";
+      readonly track?: string;
+      readonly maximum: NumericValue;
+      readonly label?: string;
+    }
+  | {
+      readonly type: "minimum-score";
+      readonly track?: string;
+      readonly minimum: NumericValue;
       readonly label?: string;
     }
   | {
@@ -157,7 +176,15 @@ export interface ScoreLedgerEntry {
   readonly source: EffectSource;
   readonly triggerId: string;
   readonly operation:
-    "base" | "add" | "multiply" | "target" | "final" | "outcome";
+    | "base"
+    | "add"
+    | "multiply"
+    | "cap"
+    | "minimum"
+    | "target"
+    | "final"
+    | "outcome";
+  readonly track: string;
   readonly label: string;
   readonly before: number;
   readonly after: number;
@@ -204,6 +231,10 @@ export type EffectDiagnostic =
 export interface EffectRuntimeState {
   readonly score: number;
   readonly target: number;
+  readonly tracks?: Readonly<Record<string, number>>;
+  readonly rawTracks?: Readonly<Record<string, number>>;
+  readonly targets?: Readonly<Record<string, number>>;
+  readonly limits?: Readonly<Record<string, number>>;
   readonly currency: number;
   readonly priceModifier: number;
   readonly rng: RandomState;
@@ -354,6 +385,14 @@ function readValue(
       return signal.values[value.key] ?? 0;
     case "stored":
       return instance?.storedValues[value.key] ?? 0;
+    case "report-track":
+      return requiredNumeric(state.rawTracks, value.key, value.from);
+    case "resolved-track":
+      return requiredNumeric(state.tracks, value.key, value.from);
+    case "named-target":
+      return requiredNumeric(state.targets, value.key, value.from);
+    case "limit":
+      return requiredNumeric(state.limits, value.key, value.from);
     case "score":
       return state.score;
     case "target":
@@ -363,6 +402,20 @@ function readValue(
     case "owned-count":
       return state.instances.filter((x) => !x.destroyed).length;
   }
+}
+function requiredNumeric(
+  values: Readonly<Record<string, number>> | undefined,
+  key: string,
+  source: string,
+): number {
+  const result = values?.[key];
+  if (result === undefined)
+    throw new FrameworkError(
+      "invalid-numeric-value",
+      `Unknown ${source} key '${key}'`,
+      { path: `${source}.${key}` },
+    );
+  return result;
 }
 function compare(a: number, op: NumericComparator, b: number): boolean {
   return op === "eq"
@@ -460,7 +513,13 @@ export function resolveEffects(
     readonly maxRetriggersPerSource: number;
   } = EFFECT_LIMITS,
 ): EffectResolutionResult {
-  let state = initial;
+  let state: EffectRuntimeState = {
+    ...initial,
+    tracks: initial.tracks ?? { score: initial.score },
+    rawTracks: initial.rawTracks ?? initial.tracks ?? { score: initial.score },
+    targets: initial.targets ?? { score: initial.target },
+    limits: initial.limits ?? {},
+  };
   const events: EffectRuntimeEvent[] = [];
   const emittedSignals: GameSignal[] = [];
   const ledger: ScoreLedgerEntry[] = [];
@@ -625,7 +684,23 @@ export function resolveEffects(
           queue.length = 0;
           break;
         }
-        const before = state.score;
+        const track =
+          "track" in operation && operation.track ? operation.track : "score";
+        if (
+          (operation.type === "add-score" ||
+            operation.type === "multiply-score" ||
+            operation.type === "cap-score" ||
+            operation.type === "minimum-score") &&
+          state.tracks?.[track] === undefined
+        ) {
+          diagnostic({
+            type: "invalid-content",
+            message: `Unknown score track '${track}'`,
+            source: execution.source,
+          });
+          continue;
+        }
+        const before = state.tracks?.[track] ?? state.score;
         const value =
           "amount" in operation
             ? readValue(operation.amount, state, signal, current) *
@@ -635,16 +710,44 @@ export function resolveEffects(
           "label" in operation && operation.label
             ? operation.label
             : execution.definition.label;
-        if (operation.type === "add-score")
-          state = { ...state, score: state.score + value };
-        else if (operation.type === "multiply-score")
+        if (operation.type === "add-score") {
+          const after = before + value;
           state = {
             ...state,
-            score: Math.floor(
-              (state.score * operation.numerator) / operation.denominator,
-            ),
+            score: track === "score" ? after : state.score,
+            tracks: { ...state.tracks, [track]: after },
           };
-        else if (operation.type === "modify-target")
+        } else if (operation.type === "multiply-score") {
+          const after = Math.floor(
+            (before * operation.numerator) / operation.denominator,
+          );
+          state = {
+            ...state,
+            score: track === "score" ? after : state.score,
+            tracks: { ...state.tracks, [track]: after },
+          };
+        } else if (
+          operation.type === "cap-score" ||
+          operation.type === "minimum-score"
+        ) {
+          const boundary = readValue(
+            operation.type === "cap-score"
+              ? operation.maximum
+              : operation.minimum,
+            state,
+            signal,
+            current,
+          );
+          const after =
+            operation.type === "cap-score"
+              ? Math.min(before, boundary)
+              : Math.max(before, boundary);
+          state = {
+            ...state,
+            score: track === "score" ? after : state.score,
+            tracks: { ...state.tracks, [track]: after },
+          };
+        } else if (operation.type === "modify-target")
           state = { ...state, target: Math.max(0, state.target + value) };
         else if (operation.type === "currency")
           state = { ...state, currency: Math.max(0, state.currency + value) };
@@ -810,6 +913,8 @@ export function resolveEffects(
         if (
           operation.type === "add-score" ||
           operation.type === "multiply-score" ||
+          operation.type === "cap-score" ||
+          operation.type === "minimum-score" ||
           operation.type === "modify-target"
         )
           ledger.push({
@@ -823,15 +928,27 @@ export function resolveEffects(
                 ? "add"
                 : operation.type === "multiply-score"
                   ? "multiply"
-                  : "target",
+                  : operation.type === "cap-score"
+                    ? "cap"
+                    : operation.type === "minimum-score"
+                      ? "minimum"
+                      : "target",
+            track: operation.type === "modify-target" ? "score" : track,
             label,
             before:
               operation.type === "modify-target"
                 ? state.target - value
                 : before,
             after:
-              operation.type === "modify-target" ? state.target : state.score,
-            amount: operation.type === "multiply-score" ? undefined : value,
+              operation.type === "modify-target"
+                ? state.target
+                : (state.tracks?.[track] ?? state.score),
+            amount:
+              operation.type === "multiply-score" ||
+              operation.type === "cap-score" ||
+              operation.type === "minimum-score"
+                ? undefined
+                : value,
             multiplier:
               operation.type === "multiply-score"
                 ? {

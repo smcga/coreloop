@@ -69,6 +69,7 @@ describe("generic run engine", () => {
       id: "encounter-1",
       number: 1,
       target: 29,
+      requirements: { targets: { score: 29 }, objectives: [], limits: {} },
       rules: [],
       moduleSeed: a.currentEncounter!.moduleSeed,
     });
