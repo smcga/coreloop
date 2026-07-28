@@ -38,6 +38,10 @@ export interface TargetPolicy extends VersionedPolicy {
     readonly rng: RandomState;
   }): import("./engine").EncounterRequirements;
 }
+export type EncounterReward =
+  | { readonly type: "currency"; readonly amount: number }
+  | { readonly type: "container"; readonly definitionId: string }
+  | { readonly type: "sequence"; readonly rewards: readonly EncounterReward[] };
 export interface RewardPolicy extends VersionedPolicy {
   /** Policy RNG is an immutable snapshot. Reward calculation never advances run RNG. */
   rewardForEncounter(context: {
@@ -45,7 +49,7 @@ export interface RewardPolicy extends VersionedPolicy {
     readonly score: number;
     readonly target: number;
     readonly rng: RandomState;
-  }): number;
+  }): number | EncounterReward;
 }
 export interface ShopGenerationPolicy extends VersionedPolicy {
   offerCount(context: { readonly entry: EncounterScheduleEntry }): number;

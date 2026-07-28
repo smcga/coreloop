@@ -5,6 +5,7 @@ import {
   type RunState,
 } from "@core-loop/core";
 import { gardenContentPack, gardenTerms } from "./content";
+import { createRewardViewModel } from "@core-loop/content";
 import { createGardenSession, gardenModules } from "./configuration";
 import { gardenModule, type GardenState } from "./gameplay";
 import "./style.css";
@@ -98,6 +99,7 @@ function render() {
     (item) => !item.hostInstanceId,
   );
   const result = state.lastReport;
+  const reward = createRewardViewModel(state.pendingReward, nameOf);
   root.innerHTML = `
     <header><div><p class="eyebrow">Season seed ${state.seed}</p><h1>${gardenTerms.applicationTitle}</h1></div><button class="quiet" id="new">New season</button></header>
     <div class="status"><span>Session <strong>${Math.max(1, state.schedulePosition + 1)}/${state.schedule.length || 5}</strong></span><span>${gardenTerms.terms.currency.singular} <strong>${state.currency}</strong></span><span>Goal <strong>${state.currentEncounter?.target ?? result?.score ?? "—"}</strong></span></div>
@@ -115,13 +117,18 @@ function render() {
           : ""
       }
       ${state.phase === "encounter-active" && growing ? `<h2>Choose two plants</h2><p>Water allowance ${growing.waterAllowance}${growing.minimumResilience ? ` · resilience needed ${growing.minimumResilience}` : ""}</p><section class="plants">${growing.plants.map((plant, index) => `<button data-plant="${index}" ${growing.planted.includes(index) ? "disabled" : ""}><strong>Plant ${index + 1}</strong><span>Growth ${plant.growth}</span><small>Water ${plant.water} · resilience ${plant.resilience}</small></button>`).join("")}</section><p class="harvest">Harvest <strong>${progress?.score ?? 0}</strong></p>` : ""}
-      ${state.phase === "reward" ? `<h2>${result && result.score >= (state.currentEncounter?.target ?? Infinity) ? "Harvest gathered" : "The first setback is recoverable"}</h2><p>Harvest ${result?.score} against a goal of ${state.currentEncounter?.target}. The season continues.</p><div class="actions">${[2, 4].includes(state.encounterNumber) ? `<button id="shop">Visit garden centre</button>` : `<button id="advance">Next growing session</button>`}</div>` : ""}
+      ${state.phase === "reward" ? `<h2>${reward ? "Garden reward" : result && result.score >= (state.currentEncounter?.target ?? Infinity) ? "Harvest gathered" : "The first setback is recoverable"}</h2>${reward?.type === "container" ? `<p>${reward.label} is ready.</p><button id="open-reward">Open reward</button>` : reward?.type === "choice" ? `<p>Choose one authored reward.</p><section class="offers">${reward.options.map((option) => `<button data-reward="${option.id}"><strong>${option.label}</strong></button>`).join("")}</section>` : reward?.type === "target" ? `<p>Choose a compatible plant for ${reward.option.label}.</p><div class="actions">${owned.map((item) => `<button class="secondary" data-reward-target="${item.instanceId}">${nameOf(item.definitionId)}</button>`).join("")}</div>` : `<p>Harvest ${result?.score} against a goal of ${state.currentEncounter?.target}. The season continues.</p><div class="actions">${[2, 4].includes(state.encounterNumber) ? `<button id="shop">Visit garden centre</button>` : `<button id="advance">Next growing session</button>`}</div>`}` : ""}
       ${state.phase === "shop" && state.shop ? `<h2>Garden centre</h2><p>All offers come from the authored Garden content pool.</p><section class="offers">${state.shop.offers.map((offer) => `<button data-buy="${offer.id}"><strong>${nameOf(offer.definitionId)}</strong><span>${offer.price} compost</span></button>`).join("")}</section>${state.pendingAcquisition ? `<h3>Choose a host for ${nameOf(state.pendingAcquisition.offer.definitionId)}</h3><div class="actions">${owned.map((item) => `<button class="secondary" data-target="${item.instanceId}">${nameOf(item.definitionId)}</button>`).join("")}</div>` : ""}<div class="actions"><button class="secondary" id="reroll">Refresh · ${state.shop.rerollPrice}</button><button id="leave">Leave centre</button></div>` : ""}
       ${state.phase === "run-complete" ? `<h2>Season complete!</h2><p>Five growing sessions finished with ${state.currency} compost.</p>` : ""}
       ${state.phase === "run-failed" ? `<h2>Season ended</h2><p>The garden could not recover from this weather.</p>` : ""}
     </main>
     <details><summary>Garden shed · ${owned.length} items</summary><ul>${owned.map((item) => `<li>${nameOf(item.definitionId)}${item.attachmentIds.length ? ` · ${item.attachmentIds.length} trait` : ""}${state.phase === "shop" ? ` <button class="link" data-sell="${item.instanceId}">Return</button>` : ""}</li>`).join("")}</ul></details>
     <details><summary>Save tools</summary><textarea id="transfer" aria-label="Save export or import"></textarea><div class="actions"><button class="secondary" id="export">Export save</button><button class="secondary" id="import">Import save</button></div></details>`;
+  root
+    .querySelector<HTMLButtonElement>("#open-reward")
+    ?.addEventListener("click", () =>
+      command({ type: "open-reward-container" }),
+    );
   root
     .querySelector<HTMLButtonElement>("#start")
     ?.addEventListener("click", () => command({ type: "start-encounter" }));
@@ -157,6 +164,25 @@ function render() {
         type: "choose-acquisition-target",
         offerId: state.pendingAcquisition!.offer.id,
         targetInstanceId: button.dataset.target!,
+      }),
+    ),
+  );
+  root
+    .querySelectorAll<HTMLElement>("[data-reward]")
+    .forEach((button) =>
+      button.addEventListener("click", () =>
+        command({ type: "choose-reward", optionId: button.dataset.reward! }),
+      ),
+    );
+  root.querySelectorAll<HTMLElement>("[data-reward-target]").forEach((button) =>
+    button.addEventListener("click", () =>
+      command({
+        type: "choose-reward-target",
+        optionId:
+          state.pendingReward?.type === "target"
+            ? state.pendingReward.option.id
+            : "",
+        targetInstanceId: button.dataset.rewardTarget!,
       }),
     ),
   );

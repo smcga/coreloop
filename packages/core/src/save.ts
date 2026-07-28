@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 9;
+export const SAVE_FORMAT_VERSION = 10;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -373,6 +373,23 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
                 isRecord(entry) ? { track: "score", ...entry } : entry,
               )
             : [],
+        },
+      };
+    },
+  })
+  .register({
+    fromVersion: 9,
+    toVersion: 10,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      return {
+        ...old,
+        formatVersion: 10,
+        run: {
+          ...run,
+          pendingReward: run.pendingReward ?? null,
+          rewardHistory: run.rewardHistory ?? [],
+          nextRewardOptionId: run.nextRewardOptionId ?? 1,
         },
       };
     },

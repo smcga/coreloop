@@ -368,6 +368,53 @@ export function runSimulation(
               );
             }
         } else if (state.phase === "reward" || state.phase === "shop") {
+          if (state.phase === "reward" && state.pendingReward) {
+            if (state.pendingReward.type === "container") {
+              command({ type: "open-reward-container" });
+              continue;
+            }
+            if (state.pendingReward.type === "choice") {
+              command({
+                type: "choose-reward",
+                optionId: state.pendingReward.options[0]!.id,
+              });
+              continue;
+            }
+            command({
+              type: "choose-reward-target",
+              optionId: state.pendingReward.option.id,
+              targetInstanceId: state.inventory.instances.find((item) => {
+                if (item.hostInstanceId) return false;
+                const operation =
+                  state.pendingReward?.type === "target"
+                    ? state.pendingReward.option.acquisition
+                    : undefined;
+                const definition = session.definitionFor(item.definitionId);
+                if (operation?.type !== "attachment" || !definition)
+                  return false;
+                if (!operation.hostCategories.includes(definition.category))
+                  return false;
+                if (
+                  operation.requiredHostTags?.some(
+                    (tag) => !definition.tags.includes(tag),
+                  )
+                )
+                  return false;
+                return !(
+                  operation.slot &&
+                  item.attachmentIds.some(
+                    (id) =>
+                      session.definitionFor(
+                        state.inventory.instances.find(
+                          (child) => child.instanceId === id,
+                        )?.definitionId ?? "",
+                      )?.attachmentSlot === operation.slot,
+                  )
+                );
+              })!.instanceId,
+            });
+            continue;
+          }
           if (state.phase === "shop") {
             for (const m of metrics.values()) m.eligible++;
             for (const offer of state.shop?.offers ?? [])

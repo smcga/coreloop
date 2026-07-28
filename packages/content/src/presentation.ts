@@ -7,6 +7,7 @@ import {
   type TerminologyKey,
 } from "./model";
 import type { ValidationError } from "./registry";
+import type { PendingReward } from "@core-loop/core";
 
 export interface PresentationDiagnostic {
   readonly packId: string;
@@ -240,3 +241,31 @@ export const createAcquisitionTargetViewModel = (
   targetInstanceIds: pending.targetInstanceIds,
   requiresTarget: pending.targetInstanceIds.length > 0,
 });
+
+/** Generic projection of authoritative reward state; it never generates options. */
+export const createRewardViewModel = (
+  pending: PendingReward | null,
+  labelFor: (definitionId: string) => string,
+) => {
+  if (!pending) return null;
+  if (pending.type === "container")
+    return {
+      type: pending.type,
+      definitionId: pending.definitionId,
+      label: labelFor(pending.definitionId),
+    } as const;
+  if (pending.type === "choice")
+    return {
+      type: pending.type,
+      definitionId: pending.definitionId,
+      options: pending.options.map((option) => ({
+        ...option,
+        label: labelFor(option.definitionId),
+      })),
+    } as const;
+  return {
+    type: pending.type,
+    definitionId: pending.definitionId,
+    option: { ...pending.option, label: labelFor(pending.option.definitionId) },
+  } as const;
+};
