@@ -16,6 +16,9 @@ import {
   createRunEngine,
   type RunConfiguration,
 } from "./engine";
+import { FrameworkError } from "./errors";
+
+const EMPTY_PROJECTION = {} as const;
 
 export interface GameplayActionTransition extends TransitionResult {
   readonly accepted: boolean;
@@ -42,6 +45,18 @@ export function createHeadlessRunSession(options: {
   readonly configuration: RunConfiguration;
   readonly modules: GameplayModuleRegistry;
 }) {
+  const configuredProjection = options.configuration.gameplayProjection;
+  if (configuredProjection) {
+    if (!configuredProjection.id.includes(":"))
+      throw new Error("Gameplay projection ID must be namespaced");
+    if (
+      !Number.isSafeInteger(configuredProjection.version) ||
+      configuredProjection.version < 1
+    )
+      throw new Error("Gameplay projection version must be a positive integer");
+    if (!options.configuration.content)
+      throw new Error("A content provider is required for gameplay projection");
+  }
   const engine = createRunEngine(options.configuration);
 
   const rejected = (
@@ -71,6 +86,14 @@ export function createHeadlessRunSession(options: {
       moduleVersion: module.version,
       encounterId: encounter.id,
       data: validated as JsonValue,
+      ...(options.configuration.gameplayProjection
+        ? {
+            projection: {
+              id: options.configuration.gameplayProjection.id,
+              version: options.configuration.gameplayProjection.version,
+            },
+          }
+        : {}),
     };
   };
 
@@ -81,6 +104,33 @@ export function createHeadlessRunSession(options: {
       throw new Error("Gameplay session does not match the active encounter");
     if (state.gameplaySession.moduleId !== state.gameplayModuleId)
       throw new Error("Gameplay session module does not match the run");
+    const expectedProjection = options.configuration.gameplayProjection;
+    const savedProjection = state.gameplaySession.projection;
+    if (expectedProjection && savedProjection?.id !== expectedProjection.id)
+      throw new FrameworkError(
+        "unknown-gameplay-projection",
+        `Gameplay projection '${savedProjection?.id ?? "missing"}' is unavailable`,
+        savedProjection ? { projectionId: savedProjection.id } : {},
+      );
+    if (
+      expectedProjection &&
+      savedProjection?.version !== expectedProjection.version
+    )
+      throw new FrameworkError(
+        "incompatible-projection-version",
+        `Gameplay projection '${expectedProjection.id}' version ${String(savedProjection?.version)} is incompatible with installed version ${expectedProjection.version}`,
+        {
+          projectionId: expectedProjection.id,
+          expected: expectedProjection.version,
+          actual: savedProjection?.version,
+        },
+      );
+    if (!expectedProjection && savedProjection)
+      throw new FrameworkError(
+        "unknown-gameplay-projection",
+        `Gameplay projection '${savedProjection.id}' is not installed`,
+        { projectionId: savedProjection.id },
+      );
     return {
       module: moduleFor(state),
       data: options.modules.restore(state.gameplaySession),
@@ -157,6 +207,49 @@ export function createHeadlessRunSession(options: {
       return engine.handle(state, command);
     try {
       const module = moduleFor(state);
+      const projector = options.configuration.gameplayProjection;
+      if (projector && projector.moduleId !== module.id)
+        throw new Error(
+          `Gameplay projection '${projector.id}' is incompatible with module '${module.id}'`,
+        );
+      const projection = projector
+        ? projector.project({
+            encounter: state.currentEncounter,
+            inventory: {
+              instances: state.inventory.instances.map((instance) => {
+                const definition = options.configuration.content?.getDefinition(
+                  instance.definitionId,
+                );
+                if (!definition)
+                  throw new Error(
+                    "A content provider is required for projection",
+                  );
+                return {
+                  instanceId: instance.instanceId,
+                  definitionId: instance.definitionId,
+                  category: definition.category,
+                  tags: [...definition.tags, ...instance.temporaryTags],
+                  storedValues: { ...instance.storedValues },
+                  disabled: instance.disabled,
+                  destroyed: instance.destroyed,
+                  attachmentIds: [...instance.attachmentIds],
+                  ...(instance.hostInstanceId
+                    ? { hostInstanceId: instance.hostInstanceId }
+                    : {}),
+                  transformationHistory: [...instance.transformationHistory],
+                };
+              }),
+              activeRunUpgradeIds: [...state.inventory.upgradeIds],
+            },
+            content: options.configuration.content!,
+            runTags: [...state.effects.runTags],
+            encounterTags: [...state.effects.encounterTags],
+            allowances: { ...state.effects.allowances },
+          })
+        : EMPTY_PROJECTION;
+      // Canonicalisation rejects undefined, functions, cycles and non-finite values
+      // before either the run RNG or state can be advanced.
+      canonicalJson(projection);
       const created = module.createEncounter({
         encounterId: state.currentEncounter.id,
         encounterNumber: state.currentEncounter.number,
@@ -164,6 +257,7 @@ export function createHeadlessRunSession(options: {
         requirements: state.currentEncounter.requirements,
         rules: state.currentEncounter.rules,
         seed: state.currentEncounter.moduleSeed,
+        projection,
       });
       validateSignals(created.signals ?? []);
       const session = envelope(state, created.state);

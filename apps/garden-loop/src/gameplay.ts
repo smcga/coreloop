@@ -5,6 +5,8 @@ import {
 } from "@core-loop/core";
 export interface GardenState {
   readonly plants: readonly {
+    instanceId: string;
+    definitionId: string;
     growth: number;
     water: number;
     resilience: number;
@@ -20,16 +22,23 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
   capabilities: ["garden-loop:plants"],
   createEncounter(context) {
     let rng = createRandom(context.seed);
-    const plants = [];
-    for (let i = 0; i < 3; i++) {
-      const g = randomInteger(rng, 2, 9);
+    const projected = validateGardenProjection(context.projection);
+    const plants = projected.plants.map((plant) => {
+      // Variation belongs to the module RNG; it augments rather than replaces
+      // the stable, run-owned pool.
+      const g = randomInteger(rng, -1, 1);
       rng = g.state;
-      const w = randomInteger(rng, 1, 5);
+      const w = randomInteger(rng, -1, 1);
       rng = w.state;
-      const r = randomInteger(rng, 1, 5);
+      const r = randomInteger(rng, -1, 1);
       rng = r.state;
-      plants.push({ growth: g.value, water: w.value, resilience: r.value });
-    }
+      return {
+        ...plant,
+        growth: Math.max(0, plant.growth + g.value),
+        water: Math.max(0, plant.water + w.value),
+        resilience: Math.max(0, plant.resilience + r.value),
+      };
+    });
     let waterPenalty = 0;
     let minimumResilience = 0;
     for (const rule of context.rules) {
@@ -58,7 +67,7 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
       action.type !== "plant" ||
       !state.plants[action.index] ||
       state.planted.includes(action.index) ||
-      state.planted.length >= 2
+      state.planted.length >= Math.min(2, state.plants.length)
     )
       return {
         state,
@@ -111,13 +120,13 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
     });
     return {
       completedActions: state.planted.length,
-      totalActions: 2,
+      totalActions: Math.min(2, state.plants.length),
       score: report.score,
       status: state.planted.length === 2 ? "complete" : "planting",
       metrics: report.metrics,
     };
   },
-  isComplete: (s) => s.planted.length === 2,
+  isComplete: (s) => s.planted.length === Math.min(2, s.plants.length),
   validateState(v) {
     if (
       !v ||
@@ -162,3 +171,33 @@ export const gardenModule: GameplayModule<GardenState, GardenAction> = {
     },
   }),
 };
+
+interface GardenProjection {
+  readonly plants: readonly GardenState["plants"][number][];
+}
+
+function validateGardenProjection(value: unknown): GardenProjection {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("plants" in value) ||
+    !Array.isArray(value.plants) ||
+    value.plants.some(
+      (plant) =>
+        !plant ||
+        typeof plant !== "object" ||
+        !("instanceId" in plant) ||
+        typeof plant.instanceId !== "string" ||
+        !("definitionId" in plant) ||
+        typeof plant.definitionId !== "string" ||
+        !("growth" in plant) ||
+        !Number.isFinite(plant.growth) ||
+        !("water" in plant) ||
+        !Number.isFinite(plant.water) ||
+        !("resilience" in plant) ||
+        !Number.isFinite(plant.resilience),
+    )
+  )
+    throw new Error("Invalid Garden inventory projection");
+  return value as GardenProjection;
+}

@@ -36,9 +36,11 @@ const runtimeDefinition = (
     occupiesCapacity:
       definition.category !== "attached-modifier" ||
       definition.occupiesInventory,
-    ...(triggered?.initialStoredValues
-      ? { initialStoredValues: triggered.initialStoredValues }
-      : {}),
+    ...("baseValues" in definition
+      ? { initialStoredValues: definition.baseValues }
+      : triggered?.initialStoredValues
+        ? { initialStoredValues: triggered.initialStoredValues }
+        : {}),
     ...(triggered?.triggers ? { triggers: triggered.triggers } : {}),
     ...(definition.category === "consumable" &&
     definition.operation === "effect"

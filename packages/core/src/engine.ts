@@ -14,7 +14,11 @@ import {
   type ScoreLedgerEntry,
 } from "./effects";
 import { canonicalJson } from "./canonical";
-import type { GameplaySessionState, RuleReference } from "./gameplay";
+import type {
+  GameplayContextProjection,
+  GameplaySessionState,
+  RuleReference,
+} from "./gameplay";
 import type {
   RuntimeContentDefinition,
   RuntimeContentProvider,
@@ -42,6 +46,7 @@ export interface RunConfiguration {
   readonly shopProviders?: readonly ShopPoolProvider[];
   readonly gameplayCapabilities?: Readonly<Record<string, readonly string[]>>;
   readonly rarityPriceMultipliers?: Readonly<Record<string, number>>;
+  readonly gameplayProjection?: GameplayContextProjection;
 }
 export interface ContentInstance {
   readonly instanceId: string;
