@@ -17,6 +17,52 @@ export interface ModuleGameplaySignal {
   readonly values: Readonly<Record<string, number>>;
 }
 
+export interface GameplayOperationContext {
+  readonly run: JsonValue;
+  readonly gameplay: JsonValue;
+  readonly operation: JsonValue;
+}
+export interface GameplayOperationResult {
+  readonly gameplay: JsonValue;
+  readonly signals?: readonly ModuleGameplaySignal[];
+}
+export interface GameplayOperationHandler {
+  readonly id: string;
+  readonly version: number;
+  readonly supportedModuleIds?: readonly string[];
+  apply(context: GameplayOperationContext): GameplayOperationResult;
+}
+
+/** Explicit application boundary for deterministic operations on opaque state. */
+export class GameplayOperationRegistry {
+  private readonly handlers = new Map<string, GameplayOperationHandler>();
+
+  constructor(handlers: readonly GameplayOperationHandler[] = []) {
+    for (const handler of handlers) {
+      if (!/^[a-z0-9-]+:[a-z0-9-]+$/.test(handler.id))
+        throw new Error("Gameplay operation IDs must be namespaced");
+      if (!Number.isSafeInteger(handler.version) || handler.version < 1)
+        throw new Error(
+          `Gameplay operation '${handler.id}' has an invalid version`,
+        );
+      if (this.handlers.has(handler.id))
+        throw new Error(`Duplicate gameplay operation ID '${handler.id}'`);
+      this.handlers.set(handler.id, handler);
+    }
+  }
+
+  get(id: string): GameplayOperationHandler | undefined {
+    return this.handlers.get(id);
+  }
+
+  references(): readonly { readonly id: string; readonly version: number }[] {
+    return [...this.handlers.values()].map(({ id, version }) => ({
+      id,
+      version,
+    }));
+  }
+}
+
 export interface GameplayProgress {
   readonly completedActions: number;
   readonly totalActions: number;

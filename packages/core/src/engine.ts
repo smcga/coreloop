@@ -12,6 +12,8 @@ import {
   type EffectRuntimeEvent,
   type GameSignal,
   type ScoreLedgerEntry,
+  type EffectHandlerRegistry,
+  validateEffectDefinitions,
 } from "./effects";
 import { canonicalJson } from "./canonical";
 import type {
@@ -48,6 +50,8 @@ export interface RunConfiguration {
   readonly gameplayCapabilities?: Readonly<Record<string, readonly string[]>>;
   readonly rarityPriceMultipliers?: Readonly<Record<string, number>>;
   readonly gameplayProjection?: GameplayContextProjection;
+  /** Immutable after composition; all custom operations execute through it. */
+  readonly effectHandlers?: EffectHandlerRegistry;
 }
 export interface ContentInstance {
   readonly instanceId: string;
@@ -908,6 +912,7 @@ function resolveSignalBatch(
       runtime,
       signal,
       effectDefinitions(configuration, state.gameplayModuleId),
+      configuration.effectHandlers,
     );
     runtime = result.state;
     events.push(...result.events);
@@ -1139,6 +1144,12 @@ export function createRunEngine(configuration: RunConfiguration) {
       "invalid-policy",
       "createRunEngine requires an explicit policy set",
     );
+  const effectErrors = validateEffectDefinitions(
+    effectDefinitions(configuration, "core:validation"),
+    configuration.effectHandlers,
+  );
+  if (effectErrors.length)
+    throw new FrameworkError("unknown-custom-handler", effectErrors.join("; "));
   const references = Object.values(policyReferences(configuration.policies));
   if (new Set(references.map(({ id }) => id)).size !== references.length)
     throw new FrameworkError(
@@ -2016,7 +2027,11 @@ function handleCommand(
       };
     }
     case "use-consumable": {
-      if (state.phase !== "encounter-ready" || !state.currentEncounter)
+      if (
+        !state.currentEncounter ||
+        (state.phase !== "encounter-ready" &&
+          state.phase !== "encounter-active")
+      )
         return reject(
           state,
           command,
@@ -2031,6 +2046,15 @@ function handleCommand(
       if (!owned) return reject(state, command, "Consumable was not found");
       const definition = findDefinition(configuration, owned.definitionId);
       if (!definition?.use) return reject(state, command, "Item is not usable");
+      if (
+        state.phase === "encounter-active" &&
+        definition.use.type !== "custom"
+      )
+        return reject(
+          state,
+          command,
+          "This consumable is used before an encounter starts",
+        );
       const encounterEffects =
         definition.use.type === "encounter-effect"
           ? [...state.encounterEffects, owned]

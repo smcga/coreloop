@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   createGameplayModuleRegistry,
   createHeadlessRunSession,
+  GameplayOperationRegistry,
   defaultPolicies,
   type GameplayModule,
   type RunPolicySet,
 } from "../src";
+import { provider } from "./provider-fixture";
 
 type State = { readonly count: number };
 type Action = { readonly type: "finish" };
@@ -80,6 +82,77 @@ const setup = (module = oneActionModule()) => {
 };
 
 describe("headless gameplay session coordinator", () => {
+  it("applies a module-local consumable atomically and validates its state", () => {
+    const consumable = {
+      id: "test:counter-tool",
+      category: "consumable",
+      tags: [],
+      occupiesCapacity: true,
+      use: {
+        type: "custom" as const,
+        handler: { id: "test:set-count", version: 1, payload: { amount: 2 } },
+      },
+    };
+    const module = oneActionModule();
+    const makeSession = (invalid = false) =>
+      createHeadlessRunSession({
+        configuration: {
+          policies: defaultPolicies,
+          content: provider([consumable], [consumable.id]),
+          defaultLoadoutId: "test:loadout",
+        },
+        modules: createGameplayModuleRegistry([
+          module as GameplayModule<unknown, unknown>,
+        ]),
+        operations: new GameplayOperationRegistry([
+          {
+            id: "test:set-count",
+            version: 1,
+            supportedModuleIds: [module.id],
+            apply: ({ gameplay, operation }) => ({
+              gameplay: invalid
+                ? ({ count: "invalid" } as never)
+                : {
+                    count:
+                      (gameplay as { count: number }).count +
+                      (operation as { amount: number }).amount,
+                  },
+              signals: [
+                { type: "test:tool-used", tags: [], values: { amount: 2 } },
+              ],
+            }),
+          },
+        ]),
+      });
+    const start = (session: ReturnType<typeof makeSession>) => {
+      const state = session.handleCommand(session.createInitialState(), {
+        type: "start-run",
+        seed: 8,
+        gameplayModuleId: module.id,
+      }).state;
+      return session.handleCommand(state, { type: "start-encounter" }).state;
+    };
+    const session = makeSession();
+    const state = start(session);
+    const instanceId = state.inventory.instances[0]!.instanceId;
+    const result = session.handleCommand(state, {
+      type: "use-consumable",
+      instanceId,
+    });
+    expect(result.state.gameplaySession?.data).toEqual({ count: 2 });
+    expect(result.state.inventory.instances).toHaveLength(0);
+    expect(result.events.map(({ type }) => type)).toContain("consumable-used");
+
+    const invalidSession = makeSession(true);
+    const before = start(invalidSession);
+    expect(
+      invalidSession.handleCommand(before, {
+        type: "use-consumable",
+        instanceId: before.inventory.instances[0]!.instanceId,
+      }).state,
+    ).toBe(before);
+  });
+
   it("runs a two-track report through generic encounter and run outcome policies", () => {
     const module = oneActionModule({
       id: "test:two-track",
