@@ -9,3 +9,4 @@ export * from "./content";
 export * from "./policies";
 export * from "./replay";
 export * from "./session";
+export * from "./profile";

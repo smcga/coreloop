@@ -44,6 +44,8 @@ export interface BaseDefinition {
   readonly basePrice?: number;
   readonly weight?: number;
   readonly availability?: Availability;
+  /** Stable profile unlock IDs required before this definition is eligible. */
+  readonly requiredUnlockIds?: readonly string[];
   readonly presentation: Presentation;
 }
 export interface TriggerDefinition extends BaseDefinition {

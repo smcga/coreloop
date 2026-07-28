@@ -167,6 +167,15 @@ export function validateContentPack(
       );
   };
   for (const d of pack?.definitions ?? []) {
+    d.requiredUnlockIds?.forEach((id, index) => {
+      if (!idPattern.test(id))
+        add(
+          `requiredUnlockIds[${index}]`,
+          "must be a stable namespaced ID",
+          id,
+          d,
+        );
+    });
     if (d.category === "encounter") {
       d.playableObjectIds.forEach((id, i) =>
         expect(d, `playableObjectIds[${i}]`, id, "playable-object"),

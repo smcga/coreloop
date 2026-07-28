@@ -18,7 +18,10 @@ export type FrameworkErrorCode =
   | "invalid-replay"
   | "invalid-replay-action"
   | "replay-divergence"
-  | "canonicalisation-failure";
+  | "canonicalisation-failure"
+  | "invalid-profile"
+  | "incompatible-profile-content"
+  | "profile-migration-path-unavailable";
 
 export interface FrameworkErrorDetails {
   readonly path?: string;

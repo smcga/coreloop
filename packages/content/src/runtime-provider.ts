@@ -7,6 +7,7 @@ import type {
   ShopPoolProvider,
 } from "@core-loop/core";
 import { ContentRegistry, isDefinitionCompatible } from "./registry";
+import type { StartingLoadoutDefinition } from "./model";
 
 const runtimeDefinition = (
   definition: ReturnType<ContentRegistry["get"]>,
@@ -31,6 +32,9 @@ const runtimeDefinition = (
           availability: definition.availability,
           maximumCopies: definition.availability.maximumCopies,
         }
+      : {}),
+    ...(definition.requiredUnlockIds
+      ? { requiredUnlockIds: definition.requiredUnlockIds }
       : {}),
     sellable: definition.category !== "attached-modifier",
     occupiesCapacity:
@@ -90,23 +94,47 @@ const runtimeDefinition = (
 /** Adapts validated authored content without leaking presentation into core state. */
 export function createRuntimeContentProvider(
   registry: ContentRegistry,
+  eligibility: { readonly unlockedIds: readonly string[] } = {
+    unlockedIds: [],
+  },
 ): RuntimeContentProvider {
+  const eligible = (definition: ReturnType<ContentRegistry["get"]>) =>
+    (definition.requiredUnlockIds ?? []).every((id) =>
+      eligibility.unlockedIds.includes(id),
+    );
+  const loadout = (
+    definition: StartingLoadoutDefinition,
+  ): RuntimeStartingLoadout => ({
+    id: definition.id,
+    currency: definition.currency,
+    ownedDefinitionIds: definition.ownedDefinitionIds,
+    capacities: definition.capacities,
+    upgradeIds: definition.upgradeIds ?? [],
+    ...(definition.requiredUnlockIds
+      ? { requiredUnlockIds: definition.requiredUnlockIds }
+      : {}),
+  });
   return Object.freeze({
     identity: { packId: registry.pack.id, packVersion: registry.pack.version },
     getDefinition: (id: string) => runtimeDefinition(registry.get(id)),
     getStartingLoadout: (id: string): RuntimeStartingLoadout => {
       const definition = registry.getAs(id, "starting-loadout");
-      return {
-        id,
-        currency: definition.currency,
-        ownedDefinitionIds: definition.ownedDefinitionIds,
-        capacities: definition.capacities,
-        upgradeIds: definition.upgradeIds ?? [],
-      };
+      if (!eligible(definition))
+        throw new Error(`Starting loadout '${id}' is locked`);
+      return loadout(definition);
     },
+    listStartingLoadouts: () =>
+      registry.pack.definitions
+        .filter(
+          (definition): definition is StartingLoadoutDefinition =>
+            definition.category === "starting-loadout",
+        )
+        .filter(eligible)
+        .map((definition) => loadout(definition)),
     listDefinitions: (context: ContentQueryContext) =>
       registry.pack.definitions
         .filter((definition) => definition.category !== "starting-loadout")
+        .filter(eligible)
         .filter((definition) =>
           isDefinitionCompatible(definition, {
             id: context.gameplayModuleId,
