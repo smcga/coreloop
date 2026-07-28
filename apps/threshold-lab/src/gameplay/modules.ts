@@ -86,8 +86,6 @@ export const combinationGridModule: GameplayModule<
 > = {
   id: COMBINATION_GRID_ID,
   version: 1,
-  displayName: "Combination Grid",
-  description: "Select numbered objects to build pairs, runs and tag matches.",
   capabilities: [
     "score",
     "action",
@@ -269,9 +267,6 @@ export const timingMeterModule: GameplayModule<
 > = {
   id: TIMING_METER_ID,
   version: 1,
-  displayName: "Timing Meter",
-  description:
-    "Stop a moving marker near the centre over four timing attempts.",
   capabilities: [
     "score",
     "action",

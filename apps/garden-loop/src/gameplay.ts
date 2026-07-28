@@ -17,8 +17,6 @@ export type GardenAction = { readonly type: "plant"; readonly index: number };
 export const gardenModule: GameplayModule<GardenState, GardenAction> = {
   id: "garden-loop:planting",
   version: 1,
-  displayName: "Planting Plan",
-  description: "Plant a resilient two-crop arrangement.",
   capabilities: ["garden-loop:plants"],
   createEncounter(context) {
     let rng = createRandom(context.seed);

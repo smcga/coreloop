@@ -159,6 +159,43 @@ export interface TerminologyPack {
   readonly terms: Readonly<Record<TerminologyKey, Term>>;
   readonly applicationTitle?: string;
 }
+
+export type ActionLabelKey =
+  | "start"
+  | "continue"
+  | "advance"
+  | "reroll"
+  | "buy"
+  | "sell"
+  | "use"
+  | "attach"
+  | "transform"
+  | "duplicate";
+export type LocalisedContentPresentation = Presentation;
+export interface ModulePresentation extends Presentation {
+  readonly instructions: string;
+  readonly iconKey?: string;
+}
+export interface CurrencyPresentation {
+  readonly display: "code" | "symbol" | "name";
+  readonly code?: string;
+  readonly symbol?: string;
+  readonly nameKey?: TerminologyKey;
+  readonly minimumFractionDigits?: number;
+  readonly maximumFractionDigits?: number;
+}
+/** Player-facing data. This ID and locale are deliberately absent from run state. */
+export interface LocalePresentationPack {
+  readonly id: string;
+  readonly locale: string;
+  readonly terminology: Readonly<Record<TerminologyKey, Term>>;
+  readonly actions: Readonly<Record<ActionLabelKey, string>>;
+  readonly content: Readonly<Record<string, LocalisedContentPresentation>>;
+  readonly modules: Readonly<Record<string, ModulePresentation>>;
+  readonly rules: Readonly<Record<string, LocalisedContentPresentation>>;
+  readonly tracks: Readonly<Record<string, string>>;
+  readonly currency: CurrencyPresentation;
+}
 export interface RarityDefinition {
   readonly id: RarityId;
   readonly defaultWeight: number;
