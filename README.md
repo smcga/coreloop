@@ -58,11 +58,12 @@ Starting an experiment creates and displays a numeric run seed. The engine uses 
 
 ## Project status
 
-The 1.0A hardened foundation is demonstrated in the touch-first **Threshold Lab** test-bed: players choose Combination Grid or Timing Meter while sharing the deterministic six-encounter run, shops, effects, content, terminology, and browser save/resume.
+The 1.1 architectural integration release is implemented. **Threshold Lab**, the generated starter, and **Garden Loop** now compose the same authoritative headless session, policy-driven progression, authored content/economy, effects, saves, replay, presentation boundaries, and application-agnostic simulation tooling. Threshold Lab remains the touch-first regression test-bed, with Combination Grid and Timing Meter sharing its surrounding run.
 
 - [Phase 1 tracker: 0.1 Playable Spine](https://github.com/smcga/coreloop/issues/10)
 - [Phase 2 tracker: 0.2 Generic Systems](https://github.com/smcga/coreloop/issues/11)
 - [Phase 3 tracker: 1.0 Starter Kit](https://github.com/smcga/coreloop/issues/12)
+- [1.1 tracker: Architectural integration and second-game proof](https://github.com/smcga/coreloop/issues/39)
 - [First implementation issue](https://github.com/smcga/coreloop/issues/1)
 
 ## Intended stack

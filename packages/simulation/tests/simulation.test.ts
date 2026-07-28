@@ -28,7 +28,7 @@ describe("application-agnostic simulation", () => {
     expect(first.diagnostics).toEqual([]);
     expect(first.encounters[0]).toMatchObject({ position: 1, attempts: 8 });
   });
-  it("runs every shipped composition and variable schedules through default bots", () => {
+  it("runs every shipped composition and variable schedules through default bots (CI smoke)", () => {
     for (const composition of simulationRegistry.list()) {
       const report = runSimulation(simulationRegistry, {
         compositionId: composition.id,
