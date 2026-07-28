@@ -20,9 +20,11 @@ Threshold Lab's worked external examples are in `apps/threshold-lab/src/extensio
 
 ## Save envelope and migrations
 
-Save format **6** contains framework version, content pack ID/version, gameplay module ID/version, the engine's exact policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions. The complete encounter schedule and current schedule position are authoritative run state.
+Save format **9** adds generic encounter requirements, named report tracks/objectives/resources/statistics, track-attributed ledgers, and the last evaluated encounter outcome. Migration `8 → 9` maps historical `target`, `lastReport.score`, and ledger rows to the scalar `score` convention and reconstructs the last scalar outcome. Canonical replay hashes include these authoritative maps and outcome reasons, so divergence in any named result is detected.
 
-The built-in graph is `1 → 2 → 3 → 4 → 5 → 6`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity; v5 initialises the generic per-encounter effect list; v6 reconstructs the historical six-entry schedule and position without consuming RNG. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
+Save format **9** contains framework version, content pack ID/version, gameplay module ID/version, the engine's exact policies, custom effects, RNG algorithm/version, mutable `RunState`, saved time, and optional replay metadata. It never duplicates definitions. The complete encounter schedule and current schedule position are authoritative run state.
+
+The built-in graph is `1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9`: historical v1 used `contentVersion`; v2 adds content identity; v3 adds module identity; v4 adds policies, handlers, and RNG identity; v5 initialises the generic per-encounter effect list; v6 reconstructs the historical six-entry schedule and position without consuming RNG. Plain UTF-8 fixtures under `packages/core/tests/fixtures/saves` cover each boundary, corruption, a missing pack, and an unsupported module. Migrations operate on clones, never consume run RNG, must advance exactly, and commit atomically. Current saves validate without rewriting.
 
 `loadSaveFile` can check installed content/module versions and reports missing packs, unsupported versions, and unsafe numeric state with paths. The host may offer reset, compatible import, inspection, or return-to-menu; it never silently substitutes or deletes content.
 

@@ -62,6 +62,63 @@ const definition = (conditions?: EffectCondition): EffectDefinition => ({
 });
 
 describe("generic effect runtime", () => {
+  it("modifies, caps, and floors only the named track with attributed ordering", () => {
+    const state = {
+      ...runtime(),
+      tracks: { score: 10, "test:profit": 12, "test:efficiency": 8 },
+      rawTracks: { score: 10, "test:profit": 12, "test:efficiency": 8 },
+    };
+    const result = resolveEffects(state, signal(), [
+      {
+        id: "test:item",
+        label: "Profit tuning",
+        tags: [],
+        triggers: [
+          {
+            id: "profit",
+            event: "score",
+            operations: [
+              {
+                type: "add-score",
+                track: "test:profit",
+                amount: { from: "constant", value: 5 },
+              },
+              {
+                type: "multiply-score",
+                track: "test:profit",
+                numerator: 3,
+                denominator: 2,
+              },
+              {
+                type: "cap-score",
+                track: "test:profit",
+                maximum: { from: "constant", value: 20 },
+              },
+              {
+                type: "minimum-score",
+                track: "test:profit",
+                minimum: { from: "constant", value: 18 },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(result.state.tracks).toEqual({
+      score: 10,
+      "test:profit": 20,
+      "test:efficiency": 8,
+    });
+    expect(
+      result.ledgerEntries.map(({ track, operation }) => [track, operation]),
+    ).toEqual([
+      ["test:profit", "add"],
+      ["test:profit", "multiply"],
+      ["test:profit", "cap"],
+      ["test:profit", "minimum"],
+    ]);
+  });
+
   it("evaluates nested signal, source, numeric, encounter, occurrence, and boolean conditions", () => {
     const condition: EffectCondition = {
       type: "all",

@@ -6,6 +6,7 @@ import {
 import {
   createGameplayModuleRegistry,
   createHeadlessRunSession,
+  defaultPolicies,
   type RunPolicySet,
 } from "@core-loop/core";
 import { gardenContentPack } from "./content";
@@ -13,6 +14,7 @@ import { gardenModule } from "./gameplay";
 
 /** Five authored entries replace every former round-number/modulo branch. */
 export const gardenPolicies: RunPolicySet = {
+  encounterOutcome: defaultPolicies.encounterOutcome,
   start: {
     id: "garden-loop:season-start",
     version: 1,

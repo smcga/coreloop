@@ -28,6 +28,7 @@ export interface GameplayEncounterContext {
   readonly encounterId: string;
   readonly encounterNumber: number;
   readonly target: number;
+  readonly requirements?: import("./engine").EncounterRequirements;
   readonly rules: readonly RuleReference[];
   /** A seed derived by advancing the run RNG exactly once. */
   readonly seed: number;

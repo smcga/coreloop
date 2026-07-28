@@ -82,9 +82,19 @@ export interface EncounterBrief {
   readonly id: string;
   readonly number: number;
   readonly target: number;
+  readonly requirements: EncounterRequirements;
   readonly rules: readonly RuleReference[];
   /** Derived by consuming exactly one value from the authoritative run RNG. */
   readonly moduleSeed: number;
+}
+export interface ObjectiveRequirement {
+  readonly key: string;
+  readonly expected?: boolean;
+}
+export interface EncounterRequirements {
+  readonly targets: Readonly<Record<string, number>>;
+  readonly objectives: readonly ObjectiveRequirement[];
+  readonly limits: Readonly<Record<string, number>>;
 }
 export interface GameplaySignal {
   readonly type: string;
@@ -94,12 +104,18 @@ export interface GameplaySignal {
 }
 export interface EncounterReport {
   readonly encounterId: string;
+  /** Scalar compatibility view of tracks.score. */
   readonly score: number;
+  readonly tracks?: Readonly<Record<string, number>>;
+  readonly objectives?: Readonly<Record<string, boolean>>;
+  readonly resources?: Readonly<Record<string, number>>;
   readonly tags: readonly string[];
   readonly metrics: Readonly<Record<string, number>>;
+  readonly statistics?: Readonly<Record<string, number>>;
   readonly signals: readonly GameplaySignal[];
 }
 export interface ScoreLine {
+  readonly track?: string;
   readonly label: string;
   readonly operation: "add" | "multiply" | "subtract" | "final";
   readonly value: number;
@@ -130,6 +146,7 @@ export interface RunState {
   readonly nextInstanceId: number;
   readonly nextOfferId: number;
   readonly lastReport: EncounterReport | null;
+  readonly lastOutcome: import("./policies").EncounterOutcome | null;
   readonly scoreBreakdown: readonly ScoreLine[];
   readonly scoreLedger: readonly ScoreLedgerEntry[];
   readonly gameplayModuleId: string;
@@ -378,6 +395,7 @@ export function createInitialRunState(
     nextInstanceId: 1,
     nextOfferId: 1,
     lastReport: null,
+    lastOutcome: null,
     scoreBreakdown: [],
     scoreLedger: [],
     gameplayModuleId: "core:unselected",
@@ -402,10 +420,24 @@ function prepareEncounter(
 ) {
   const policies = configuration.policies ?? defaultPolicies;
   const derived = nextUint32(state);
+  const scalarTarget = policies.target.targetForEncounter({
+    entry,
+    rng: state,
+  });
   const brief: EncounterBrief = {
     id: entry.id,
     number: entry.ordinal,
-    target: policies.target.targetForEncounter({ entry, rng: state }),
+    target: scalarTarget,
+    requirements: policies.target.requirementsForEncounter?.({
+      entry,
+      rng: state,
+    }) ?? {
+      targets: {
+        score: scalarTarget,
+      },
+      objectives: [],
+      limits: {},
+    },
     rules: entry.rules,
     moduleSeed: derived.value,
   };
@@ -599,6 +631,32 @@ const validGameplaySignals = (signals: readonly GameplaySignal[]): boolean => {
       Object.values(signal.values).every(Number.isFinite),
   );
 };
+const validEncounterReport = (report: EncounterReport): boolean => {
+  try {
+    canonicalJson(report);
+  } catch {
+    return false;
+  }
+  const validNamedMap = (
+    values: Readonly<Record<string, number>> | undefined,
+  ) =>
+    Object.entries(values ?? {}).every(
+      ([key, value]) =>
+        (key === "score" || key.includes(":")) && Number.isFinite(value),
+    );
+  return (
+    Number.isFinite(report.score) &&
+    validNamedMap(report.tracks) &&
+    validNamedMap(report.resources) &&
+    validNamedMap(report.statistics) &&
+    Object.values(report.metrics).every(Number.isFinite) &&
+    Object.entries(report.objectives ?? {}).every(
+      ([key, value]) =>
+        (key === "target" || key.includes(":")) && typeof value === "boolean",
+    ) &&
+    validGameplaySignals(report.signals)
+  );
+};
 
 function resolveSignalBatch(
   state: Readonly<RunState>,
@@ -612,10 +670,20 @@ function resolveSignalBatch(
   configuration: RunConfiguration,
   score: number,
   target: number,
+  trackContext?: {
+    readonly raw: Readonly<Record<string, number>>;
+    readonly tracks?: Readonly<Record<string, number>>;
+    readonly targets: Readonly<Record<string, number>>;
+    readonly limits: Readonly<Record<string, number>>;
+  },
 ) {
   let runtime: EffectRuntimeState = {
     score,
     target,
+    tracks: trackContext?.tracks ?? trackContext?.raw ?? { score },
+    rawTracks: trackContext?.raw ?? { score },
+    targets: trackContext?.targets ?? { score: target },
+    limits: trackContext?.limits ?? {},
     currency: state.currency,
     priceModifier: state.effects.priceModifier,
     rng: state.rng,
@@ -722,6 +790,11 @@ function resolveScore(
   report: EncounterReport,
   configuration: RunConfiguration,
 ) {
+  const rawTracks: Readonly<Record<string, number>> = Object.freeze({
+    ...(report.tracks ?? {}),
+    score: report.score,
+  });
+  const rawScore = rawTracks.score ?? 0;
   const inputs = [
     ...report.signals.map((signal) => ({
       ...signal,
@@ -731,7 +804,7 @@ function resolveScore(
       type: "score-calculation-started",
       sourceId: "core:gameplay-report",
       tags: report.tags,
-      values: { ...report.metrics, rawScore: report.score },
+      values: { ...report.metrics, rawScore },
       actionId: `report-${state.encounterNumber}`,
     },
     {
@@ -746,13 +819,28 @@ function resolveScore(
     state,
     inputs,
     configuration,
-    report.score,
+    rawScore,
     state.currentEncounter!.target,
+    {
+      raw: rawTracks,
+      targets: state.currentEncounter!.requirements.targets,
+      limits: state.currentEncounter!.requirements.limits,
+    },
   );
-  const outcomeType =
-    resolved.runtime.score >= resolved.runtime.target
-      ? "encounter-won"
-      : "encounter-lost";
+  const encounterOutcome = (
+    configuration.policies ?? defaultPolicies
+  ).encounterOutcome.evaluate({
+    requirements: state.currentEncounter!.requirements,
+    tracks: resolved.runtime.tracks ?? { score: resolved.runtime.score },
+    objectives: report.objectives ?? {},
+    resources: report.resources ?? {},
+    tags: report.tags,
+    statistics: report.statistics ?? report.metrics,
+    entry: state.schedule[state.schedulePosition]!,
+  });
+  const outcomeType = encounterOutcome.success
+    ? "encounter-won"
+    : "encounter-lost";
   const completed = resolveSignalBatch(
     resolved.state,
     [
@@ -760,7 +848,7 @@ function resolveScore(
         type: "score-calculation-completed",
         sourceId: "core:encounter-result",
         values: {
-          rawScore: report.score,
+          rawScore,
           score: resolved.runtime.score,
           target: resolved.runtime.target,
         },
@@ -778,36 +866,51 @@ function resolveScore(
     configuration,
     resolved.runtime.score,
     resolved.runtime.target,
+    {
+      raw: rawTracks,
+      ...(resolved.runtime.tracks ? { tracks: resolved.runtime.tracks } : {}),
+      targets: state.currentEncounter!.requirements.targets,
+      limits: state.currentEncounter!.requirements.limits,
+    },
   );
-  const base: ScoreLedgerEntry = {
-    sequence: 1,
+  const trackKeys = Object.keys(rawTracks).sort();
+  const bases: ScoreLedgerEntry[] = trackKeys.map((track, index) => ({
+    sequence: index + 1,
     encounterId: report.encounterId,
     actionId: `report-${state.encounterNumber}`,
     source: { definitionId: "core:gameplay-report" },
-    triggerId: "reported-score",
+    triggerId: "reported-track",
     operation: "base",
-    label: "Reported score",
+    track,
+    label: track === "score" ? "Reported score" : `Reported ${track}`,
     before: 0,
-    after: report.score,
-    amount: report.score,
+    after: rawTracks[track]!,
+    amount: rawTracks[track]!,
     stage: "gameplay",
-  };
+  }));
   const effectLedger = [...resolved.ledger, ...completed.ledger].map(
-    (entry, index) => ({ ...entry, sequence: index + 2 }),
+    (entry, index) => ({ ...entry, sequence: index + bases.length + 1 }),
   );
-  const final: ScoreLedgerEntry = {
-    sequence: effectLedger.length + 2,
-    encounterId: report.encounterId,
-    source: { definitionId: "core:encounter-result" },
-    triggerId: "final-score",
-    operation: "final",
-    label: "Final score",
-    before: completed.runtime.score,
-    after: completed.runtime.score,
-    stage: "post-result",
+  const finalTracks = completed.runtime.tracks ?? {
+    score: completed.runtime.score,
   };
-  const ledger = [base, ...effectLedger, final];
+  const finals: ScoreLedgerEntry[] = Object.keys(finalTracks)
+    .sort()
+    .map((track, index) => ({
+      sequence: bases.length + effectLedger.length + index + 1,
+      encounterId: report.encounterId,
+      source: { definitionId: "core:encounter-result" },
+      triggerId: "final-track",
+      operation: "final",
+      track,
+      label: track === "score" ? "Final score" : `Final ${track}`,
+      before: finalTracks[track]!,
+      after: finalTracks[track]!,
+      stage: "post-result",
+    }));
+  const ledger = [...bases, ...effectLedger, ...finals];
   const lines: ScoreLine[] = ledger.map((entry) => ({
+    track: entry.track,
     label: entry.label,
     operation:
       entry.operation === "multiply"
@@ -829,6 +932,8 @@ function resolveScore(
   return {
     score: completed.runtime.score,
     target: completed.runtime.target,
+    tracks: completed.runtime.tracks ?? { score: completed.runtime.score },
+    outcome: encounterOutcome,
     state: completed.state,
     events,
     lines,
@@ -1057,17 +1162,26 @@ function handleCommand(
           command,
           "A validated gameplay session is required",
         );
-      if (!validGameplaySignals(command.report.signals))
+      if (!validEncounterReport(command.report))
         return reject(
           state,
           command,
           "Report signals must be serialisable, namespaced, finite, and within the 64-signal limit",
         );
       const resolved = resolveScore(state, command.report, configuration);
-      const encounterWon = resolved.score >= resolved.target;
+      const encounterWon = resolved.outcome.success;
+      const normalizedReport: EncounterReport = {
+        ...command.report,
+        score: resolved.tracks.score ?? resolved.score,
+        tracks: resolved.tracks,
+        objectives: command.report.objectives ?? {},
+        resources: command.report.resources ?? {},
+        statistics: command.report.statistics ?? command.report.metrics,
+      };
       const entry = state.schedule[state.schedulePosition]!;
       const outcome = policies.outcome.evaluate({
         entry,
+        encounterOutcome: resolved.outcome,
         encounterWon,
         hasNextEncounter: state.schedulePosition + 1 < state.schedule.length,
       });
@@ -1077,7 +1191,8 @@ function handleCommand(
           state: {
             ...resolved.state,
             phase: failed ? "run-failed" : "reward",
-            lastReport: { ...command.report, score: resolved.score },
+            lastReport: normalizedReport,
+            lastOutcome: resolved.outcome,
             scoreBreakdown: resolved.lines,
             scoreLedger: resolved.ledger,
           },
@@ -1113,7 +1228,8 @@ function handleCommand(
           ...resolved.state,
           phase: complete ? "run-complete" : "reward",
           currency: total,
-          lastReport: { ...command.report, score: resolved.score },
+          lastReport: normalizedReport,
+          lastOutcome: resolved.outcome,
           scoreBreakdown: resolved.lines,
           scoreLedger: resolved.ledger,
         },

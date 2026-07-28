@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 8;
+export const SAVE_FORMAT_VERSION = 9;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -43,6 +43,7 @@ const defaultPolicyReferences = {
   shopGeneration: { id: "core:three-offers", version: 1 },
   shopPricing: { id: "core:base-pricing", version: 1 },
   inventory: { id: "core:standard-inventory", version: 1 },
+  encounterOutcome: { id: "core:scalar-threshold-outcome", version: 1 },
   content: { id: "core:exact-content", version: 1 },
   outcome: { id: "core:six-win-outcome", version: 1 },
 } as const;
@@ -310,6 +311,68 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
             nextEventSequence: 1,
             diagnostics: [],
           },
+        },
+      };
+    },
+  })
+  .register({
+    fromVersion: 8,
+    toVersion: 9,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      const current = isRecord(run.currentEncounter)
+        ? {
+            ...run.currentEncounter,
+            requirements: run.currentEncounter.requirements ?? {
+              targets: { score: run.currentEncounter.target },
+              objectives: [],
+              limits: {},
+            },
+          }
+        : run.currentEncounter;
+      const report = isRecord(run.lastReport)
+        ? {
+            ...run.lastReport,
+            tracks: run.lastReport.tracks ?? { score: run.lastReport.score },
+            objectives: run.lastReport.objectives ?? {},
+            resources: run.lastReport.resources ?? {},
+            statistics:
+              run.lastReport.statistics ?? run.lastReport.metrics ?? {},
+          }
+        : run.lastReport;
+      const won =
+        isRecord(report) && isRecord(current)
+          ? Number(report.score) >= Number(current.target)
+          : false;
+      return {
+        ...old,
+        formatVersion: 9,
+        policies: {
+          ...(isRecord(old.policies) ? old.policies : {}),
+          encounterOutcome: defaultPolicyReferences.encounterOutcome,
+        },
+        run: {
+          ...run,
+          currentEncounter: current,
+          lastReport: report,
+          lastOutcome:
+            report == null
+              ? null
+              : {
+                  status: won ? "won" : "lost",
+                  success: won,
+                  reasons: [
+                    {
+                      code: won ? "core:target-met" : "core:target-missed",
+                      key: "score",
+                    },
+                  ],
+                },
+          scoreLedger: Array.isArray(run.scoreLedger)
+            ? run.scoreLedger.map((entry) =>
+                isRecord(entry) ? { track: "score", ...entry } : entry,
+              )
+            : [],
         },
       };
     },
