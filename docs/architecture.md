@@ -298,3 +298,9 @@ engine facade → run reducer → encounter preparation
 - **Effects** own the adapter that batches lifecycle signals, translates run state to effect runtime state, copies the result back, and records diagnostics and score ledgers. The generic interpreter remains independent.
 
 A command is handled as one transaction: the reducer validates phase and shape, delegates to a domain operation, assembles the next immutable snapshot and event facts, and finally assigns event sequence numbers. A rejected command returns the original state object; it must not consume RNG values, counters, or currency. Dependency direction is inward from the facade and reducer to domain helpers. Domain helpers never import applications, Phaser/presentation, concrete content packs, or game-specific modules, and they never call back into the reducer.
+
+### Compatibility fixtures and intentional changes
+
+The internal run contracts live in `run/contracts.ts`; the public engine facade remains the only supported application import. `run/reducer.ts` validates engine composition and orchestrates atomic command/effect sequencing, while `run/lifecycle.ts` owns command dispatch and lifecycle transition assembly. `effects/transaction.ts` is the sole adapter between authoritative run snapshots and the low-level effect interpreter, including report validation, FIFO signal processing, runtime-state projection, and score-ledger construction.
+
+Golden deterministic fixtures are compatibility contracts, not snapshots to refresh during refactors. When a deliberate breaking change affects RNG state, ordered events, ledgers, saves, replay hashes, or fixed-seed simulation output, document the reason and migration impact in its own issue, review the old and new vectors, and update the fixture only alongside that explicit behavioural change.
