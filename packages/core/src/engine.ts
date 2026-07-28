@@ -183,6 +183,9 @@ export interface RunState {
   readonly shop: ShopState | null;
   readonly pendingAcquisition: PendingAcquisition | null;
   readonly pendingReward: PendingReward | null;
+  /** The policy-resolved destination; hosts may render it but cannot replace it. */
+  readonly pendingRoute: import("./policies").PostEncounterDestination | null;
+  readonly shopCount: number;
   readonly rewardHistory: readonly CompletedReward[];
   readonly nextRewardOptionId: number;
   readonly nextInstanceId: number;
@@ -248,7 +251,8 @@ export type RunCommand =
   | { readonly type: "reroll-shop" }
   | { readonly type: "leave-shop" }
   | { readonly type: "abandon-run" }
-  | { readonly type: "advance" };
+  | { readonly type: "advance" }
+  | { readonly type: "continue" };
 type RunEventFact =
   | { readonly type: "run-started"; readonly seed: number }
   | { readonly type: "encounter-prepared"; readonly brief: EncounterBrief }
@@ -460,6 +464,8 @@ export function createInitialRunState(
     shop: null,
     pendingAcquisition: null,
     pendingReward: null,
+    pendingRoute: null,
+    shopCount: 0,
     rewardHistory: [],
     nextRewardOptionId: 1,
     nextInstanceId: 1,
@@ -1371,12 +1377,28 @@ function handleCommand(
         encounterWon,
         hasNextEncounter: state.schedulePosition + 1 < state.schedule.length,
       });
+      const routeFor = (hasPendingReward: boolean) =>
+        policies.postEncounter.destination({
+          entry,
+          schedulePosition: state.schedulePosition,
+          scheduleLength: state.schedule.length,
+          encounterOutcome: resolved.outcome,
+          hasNextEncounter: state.schedulePosition + 1 < state.schedule.length,
+          hasPendingReward,
+          runOutcome: outcome,
+          runTags: state.effects.runTags,
+          currency: resolved.state.currency,
+          upgradeIds: state.inventory.upgradeIds,
+          previousShopCount: state.shopCount,
+        });
       if (!encounterWon) {
-        const failed = outcome === "lost";
+        const pendingRoute = routeFor(false);
+        const failed = pendingRoute.type === "run-failed";
         return {
           state: {
             ...resolved.state,
             phase: failed ? "run-failed" : "reward",
+            pendingRoute,
             lastReport: normalizedReport,
             lastOutcome: resolved.outcome,
             scoreBreakdown: resolved.lines,
@@ -1417,9 +1439,11 @@ function handleCommand(
         flattenRewards(reward),
         complete,
       );
+      const pendingRoute = routeFor(begun.state.pendingReward !== null);
       return {
         state: {
           ...begun.state,
+          pendingRoute,
           lastReport: normalizedReport,
           lastOutcome: resolved.outcome,
           scoreBreakdown: resolved.lines,
@@ -1716,8 +1740,12 @@ function handleCommand(
     case "skip-reward":
       return reject(state, command, "This reward cannot be skipped");
     case "enter-shop": {
-      if (state.phase !== "reward")
-        return reject(state, command, "A won encounter reward is required");
+      if (state.phase !== "reward" || state.pendingRoute?.type !== "shop")
+        return reject(
+          state,
+          command,
+          "The authoritative route does not enter a shop",
+        );
       const generated = generateShop(
           state,
           state.nextOfferId,
@@ -1741,6 +1769,7 @@ function handleCommand(
           rng: generated.rng,
           shop,
           nextOfferId: generated.nextOfferId,
+          shopCount: state.shopCount + 1,
           currentEncounter: null,
         },
         events: [
@@ -2029,12 +2058,48 @@ function handleCommand(
       };
     }
     case "leave-shop":
-    case "advance": {
+    case "advance":
+    case "continue": {
+      if (command.type === "continue" && state.phase === "reward") {
+        if (state.pendingReward)
+          return reject(
+            state,
+            command,
+            "The pending reward must be resolved first",
+          );
+        if (state.pendingRoute?.type === "shop")
+          return handleCommand(state, { type: "enter-shop" }, configuration);
+        if (state.pendingRoute?.type === "run-complete")
+          return {
+            state: { ...state, phase: "run-complete" },
+            events: [{ type: "run-completed", currency: state.currency }],
+          };
+        if (state.pendingRoute?.type === "run-failed")
+          return {
+            state: { ...state, phase: "run-failed" },
+            events: [
+              { type: "run-failed", encounterNumber: state.encounterNumber },
+            ],
+          };
+      }
       if (
-        state.phase !== "shop" &&
-        !(command.type === "advance" && state.phase === "reward")
+        !(
+          state.phase === "shop" &&
+          (command.type === "leave-shop" || command.type === "continue") &&
+          state.pendingRoute?.type === "shop"
+        ) &&
+        !(
+          state.phase === "reward" &&
+          (command.type === "advance" || command.type === "continue") &&
+          state.pendingRoute?.type === "next-encounter" &&
+          !state.pendingReward
+        )
       )
-        return reject(state, command, "An open shop is required");
+        return reject(
+          state,
+          command,
+          "Command does not match the authoritative route",
+        );
       const schedulePosition = state.schedulePosition + 1;
       const entry = state.schedule[schedulePosition];
       if (!entry)
@@ -2056,6 +2121,7 @@ function handleCommand(
             encounterTags: [],
           },
           shop: null,
+          pendingRoute: null,
           lastReport: null,
           scoreBreakdown: [],
           scoreLedger: [],

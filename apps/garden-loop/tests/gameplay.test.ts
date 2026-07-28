@@ -233,11 +233,7 @@ describe("Garden Loop configured season", () => {
       else if (state.phase === "reward") {
         state = resolveReward(state);
         if (state.phase === "reward")
-          state = session.handleCommand(state, {
-            type: [2, 4].includes(state.encounterNumber)
-              ? "enter-shop"
-              : "advance",
-          }).state;
+          state = session.handleCommand(state, { type: "continue" }).state;
       } else if (state.phase === "shop")
         state = session.handleCommand(state, { type: "leave-shop" }).state;
     }
@@ -261,7 +257,9 @@ describe("Garden Loop configured season", () => {
       expect(resolveReward(restored)).toEqual(resolveReward(state));
       state = resolveReward(state);
       if (encounter < 3)
-        state = session.handleCommand(state, { type: "advance" }).state;
+        state = session.handleCommand(state, { type: "continue" }).state;
+      if (state.phase === "shop")
+        state = session.handleCommand(state, { type: "leave-shop" }).state;
     }
     expect(seen).toEqual([
       "garden-loop:compost-reward",
@@ -337,6 +335,9 @@ describe("Garden Loop configured season", () => {
       "utf8",
     );
     expect(main).not.toMatch(/let\s+round|round\s*\+\+|%\s*3|threshold-lab/i);
+    expect(main).not.toMatch(
+      /encounterNumber.*(?:2|4)|(?:2|4).*encounterNumber/,
+    );
     expect(main).not.toContain("gardenModule.handleAction");
     expect(main).toContain("session.handleGameplayAction");
   });

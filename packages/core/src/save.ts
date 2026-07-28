@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 10;
+export const SAVE_FORMAT_VERSION = 11;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -46,6 +46,7 @@ const defaultPolicyReferences = {
   encounterOutcome: { id: "core:scalar-threshold-outcome", version: 1 },
   content: { id: "core:exact-content", version: 1 },
   outcome: { id: "core:six-win-outcome", version: 1 },
+  postEncounter: { id: "core:reward-shop-progression", version: 1 },
 } as const;
 
 export function createSaveFile(
@@ -390,6 +391,41 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
           pendingReward: run.pendingReward ?? null,
           rewardHistory: run.rewardHistory ?? [],
           nextRewardOptionId: run.nextRewardOptionId ?? 1,
+        },
+      };
+    },
+  })
+  .register({
+    fromVersion: 10,
+    toVersion: 11,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      const phase = run.phase;
+      const pendingRoute =
+        phase === "shop"
+          ? { type: "shop" }
+          : phase === "reward"
+            ? { type: "shop" }
+            : phase === "run-complete"
+              ? { type: "run-complete" }
+              : phase === "run-failed"
+                ? { type: "run-failed" }
+                : null;
+      return {
+        ...old,
+        formatVersion: 11,
+        policies: {
+          ...(isRecord(old.policies) ? old.policies : {}),
+          postEncounter: defaultPolicyReferences.postEncounter,
+        },
+        run: {
+          ...run,
+          pendingRoute,
+          shopCount: run.shopCount ?? 0,
+          policyReferences: {
+            ...(isRecord(run.policyReferences) ? run.policyReferences : {}),
+            postEncounter: defaultPolicyReferences.postEncounter,
+          },
         },
       };
     },

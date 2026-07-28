@@ -118,6 +118,29 @@ export interface RunOutcomePolicy extends VersionedPolicy {
     readonly hasNextEncounter: boolean;
   }): RunOutcome | null;
 }
+export type PostEncounterDestination =
+  | { readonly type: "reward" }
+  | { readonly type: "shop" }
+  | { readonly type: "next-encounter" }
+  | { readonly type: "run-complete" }
+  | { readonly type: "run-failed" };
+export interface PostEncounterContext {
+  readonly entry: EncounterScheduleEntry;
+  readonly schedulePosition: number;
+  readonly scheduleLength: number;
+  readonly encounterOutcome: EncounterOutcome;
+  readonly hasNextEncounter: boolean;
+  readonly hasPendingReward: boolean;
+  readonly runOutcome: RunOutcome | null;
+  readonly runTags: readonly string[];
+  readonly currency: number;
+  readonly upgradeIds: readonly string[];
+  readonly previousShopCount: number;
+}
+export interface PostEncounterPolicy extends VersionedPolicy {
+  /** Routing is pure: the policy is deliberately not given the run RNG. */
+  destination(context: PostEncounterContext): PostEncounterDestination;
+}
 export interface RunPolicySet {
   readonly start: RunStartPolicy;
   readonly schedule: EncounterSchedulePolicy;
@@ -128,6 +151,7 @@ export interface RunPolicySet {
   readonly inventory: InventoryPolicy;
   readonly encounterOutcome: EncounterOutcomePolicy;
   readonly outcome: RunOutcomePolicy;
+  readonly postEncounter: PostEncounterPolicy;
 }
 export type RunPolicyKey = keyof RunPolicySet;
 
@@ -255,6 +279,16 @@ export const defaultPolicies: RunPolicySet = {
           ? null
           : "won",
   },
+  postEncounter: {
+    id: "core:reward-shop-progression",
+    version: 1,
+    destination: ({ runOutcome }) =>
+      runOutcome === "won"
+        ? { type: "run-complete" }
+        : runOutcome === "lost"
+          ? { type: "run-failed" }
+          : { type: "shop" },
+  },
 };
 
 export function policyReferences(
@@ -282,6 +316,7 @@ export function resolvePolicySet(
     "inventory",
     "encounterOutcome",
     "outcome",
+    "postEncounter",
   ];
   for (const key of keys)
     if (!references[key])

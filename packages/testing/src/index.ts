@@ -51,7 +51,7 @@ export function runGameplayModuleScenario<TState, TAction>(options: {
         throw new Error(`Scenario did not complete ${options.module.id}`);
       checkpoints.push(JSON.stringify(state));
     } else if (state.phase === "reward") {
-      transition = session.handleCommand(state, { type: "enter-shop" });
+      transition = session.handleCommand(state, { type: "continue" });
       state = transition.state;
       events.push(...transition.events);
     } else if (state.phase === "shop") {

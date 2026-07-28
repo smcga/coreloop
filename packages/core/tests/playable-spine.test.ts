@@ -119,7 +119,8 @@ describe("configured framework composition", () => {
           signals: [],
         },
       }).state;
-      state = engine.handle(state, { type: "advance" }).state;
+      state = engine.handle(state, { type: "continue" }).state;
+      state = engine.handle(state, { type: "leave-shop" }).state;
     }
     expect(state.currentEncounter?.rules).toEqual([
       { id: "test:module-rule", version: 1 },
