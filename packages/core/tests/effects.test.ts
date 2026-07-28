@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EffectHandlerRegistry,
+  canonicalJson,
   createRandom,
   expireEncounterEffects,
   resolveEffects,
@@ -62,6 +63,115 @@ const definition = (conditions?: EffectCondition): EffectDefinition => ({
 });
 
 describe("generic effect runtime", () => {
+  it("attributes exact and floored multipliers to each adjusted score track", () => {
+    const result = resolveEffects(
+      {
+        ...runtime(),
+        score: 10,
+        tracks: { score: 10, "test:profit": 5, "test:quality": 7 },
+      },
+      signal(),
+      [
+        {
+          id: "test:item",
+          label: "Track multiplier",
+          tags: [],
+          triggers: [
+            {
+              id: "multiply-tracks",
+              event: "score",
+              operations: [
+                { type: "multiply-score", numerator: 2, denominator: 1 },
+                {
+                  type: "multiply-score",
+                  track: "test:profit",
+                  numerator: 3,
+                  denominator: 2,
+                },
+                {
+                  type: "multiply-score",
+                  track: "test:quality",
+                  numerator: 4,
+                  denominator: 3,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result.state.tracks).toEqual({
+      score: 20,
+      "test:profit": 7,
+      "test:quality": 9,
+    });
+    expect(
+      result.ledgerEntries.map(
+        ({ track, before, after, roundingAdjustment }) => ({
+          track,
+          before,
+          after,
+          roundingAdjustment,
+        }),
+      ),
+    ).toEqual([
+      { track: "score", before: 10, after: 20, roundingAdjustment: 0 },
+      {
+        track: "test:profit",
+        before: 5,
+        after: 7,
+        roundingAdjustment: -0.5,
+      },
+      {
+        track: "test:quality",
+        before: 7,
+        after: 9,
+        roundingAdjustment: 9 - 28 / 3,
+      },
+    ]);
+    expect(canonicalJson(result.ledgerEntries)).toBe(
+      canonicalJson(
+        resolveEffects(
+          {
+            ...runtime(),
+            score: 10,
+            tracks: { score: 10, "test:profit": 5, "test:quality": 7 },
+          },
+          signal(),
+          [
+            {
+              id: "test:item",
+              label: "Track multiplier",
+              tags: [],
+              triggers: [
+                {
+                  id: "multiply-tracks",
+                  event: "score",
+                  operations: [
+                    { type: "multiply-score", numerator: 2, denominator: 1 },
+                    {
+                      type: "multiply-score",
+                      track: "test:profit",
+                      numerator: 3,
+                      denominator: 2,
+                    },
+                    {
+                      type: "multiply-score",
+                      track: "test:quality",
+                      numerator: 4,
+                      denominator: 3,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        ).ledgerEntries,
+      ),
+    );
+  });
+
   it("processes custom handler signals through the ordinary FIFO queue", () => {
     const handlers = new EffectHandlerRegistry();
     handlers.register("test:emit-bonus", ({ state }) => ({

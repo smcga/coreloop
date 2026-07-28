@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  createReplay,
   createHeadlessRunSession,
   createSaveFile,
+  createSessionReplayExecutor,
   loadSaveFile,
+  stableHash,
+  verifyReplay,
+  type RecordedInput,
   type RunState,
 } from "@core-loop/core";
 import { gardenContentPack } from "../src/content";
@@ -70,6 +75,144 @@ const resolveReward = (state: RunState) => {
 };
 
 describe("Garden Loop configured season", () => {
+  it("carries Bee Friend's resilient-placement bonus into the final report, saves, and replay", () => {
+    const session = createGardenSession();
+    const withBee = (state: RunState): RunState => ({
+      ...state,
+      inventory: {
+        ...state.inventory,
+        instances: [
+          ...state.inventory.instances,
+          {
+            instanceId: "item-bee",
+            definitionId: "garden-loop:bee-friend",
+            storedValues: { encounterHarvest: 0 },
+            disabled: false,
+            destroyed: false,
+            temporaryTags: [],
+            attachmentIds: [],
+            transformationHistory: [],
+          },
+        ],
+      },
+    });
+    const started = withBee(
+      session.handleCommand(session.createInitialState(), {
+        type: "start-run",
+        seed: 8,
+        gameplayModuleId: gardenModule.id,
+      }).state,
+    );
+    const inputs: readonly RecordedInput[] = [
+      {
+        sequence: 1,
+        type: "run-command",
+        command: { type: "start-encounter" },
+      },
+      {
+        sequence: 2,
+        type: "gameplay-action",
+        moduleId: gardenModule.id,
+        action: { type: "plant", index: 0 },
+      },
+      {
+        sequence: 3,
+        type: "gameplay-action",
+        moduleId: gardenModule.id,
+        action: { type: "plant", index: 1 },
+      },
+    ];
+    const execute = () => {
+      let state = started;
+      const events = [];
+      const checkpoints = [];
+      for (const input of inputs) {
+        const result =
+          input.type === "run-command"
+            ? session.handleCommand(state, input.command)
+            : session.handleGameplayAction(state, input.action);
+        state = result.state;
+        events.push(...result.events);
+        checkpoints.push({
+          sequence: input.sequence,
+          boundary: input.type,
+          stateHash: stableHash(state),
+          eventHash: stableHash(events),
+        });
+      }
+      return { state, events, checkpoints };
+    };
+
+    let beforeSecond = session.handleCommand(started, {
+      type: "start-encounter",
+    }).state;
+    beforeSecond = session.handleGameplayAction(beforeSecond, {
+      type: "plant",
+      index: 0,
+    }).state;
+    expect(
+      beforeSecond.inventory.instances.find(
+        (item) => item.instanceId === "item-bee",
+      )?.storedValues.encounterHarvest,
+    ).toBe(2);
+    const envelope = createSaveFile(beforeSecond, "2026-01-01T00:00:00.000Z", {
+      content: { packId: gardenContentPack.id, packVersion: 1 },
+      gameplay: { moduleId: gardenModule.id, moduleVersion: 1 },
+    });
+    const restored = loadSaveFile(JSON.stringify(envelope), {
+      contentPacks: new Map([[gardenContentPack.id, [1]]]),
+      gameplayModules: new Map([[gardenModule.id, [1]]]),
+    }).save.run;
+    const savedResult = session.handleGameplayAction(restored, {
+      type: "plant",
+      index: 1,
+    }).state;
+    const direct = execute();
+
+    expect(savedResult).toEqual(direct.state);
+    expect(direct.state.lastReport?.score).toBe(16);
+    const beeRows = direct.state.scoreLedger.filter(
+      (entry) => entry.source.definitionId === "garden-loop:bee-friend",
+    );
+    expect(beeRows).toHaveLength(1);
+    expect(beeRows[0]).toMatchObject({
+      triggerId: "apply-resilient-plant-bonus",
+      operation: "add",
+      before: 14,
+      after: 16,
+      amount: 2,
+    });
+    expect(
+      direct.events.filter(
+        (event) =>
+          event.type === "effect-runtime" &&
+          event.fact.type === "stored-value-changed" &&
+          event.fact.source.definitionId === "garden-loop:bee-friend" &&
+          event.fact.value === 2,
+      ),
+    ).toHaveLength(1);
+
+    const replay = createReplay({
+      gameplay: { moduleId: gardenModule.id, moduleVersion: 1 },
+      content: { packId: gardenContentPack.id, packVersion: 1 },
+      run: direct.state,
+      customEffects: [],
+      seed: 8,
+      inputs,
+      checkpoints: direct.checkpoints,
+      finalStateHash: stableHash(direct.state),
+      finalEventHash: stableHash(direct.events),
+    });
+    const baseExecutor = createSessionReplayExecutor(session);
+    expect(
+      verifyReplay(replay, {
+        ...baseExecutor,
+        initialState: (seed, moduleId) =>
+          withBee(baseExecutor.initialState(seed, moduleId)),
+      }),
+    ).toMatchObject({ ok: true, state: direct.state });
+  });
+
   it("projects stable owned plants and applies attached traits", () => {
     const session = createGardenSession();
     let state = session.handleCommand(session.createInitialState(), {
