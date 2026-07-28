@@ -2,7 +2,7 @@ import { CONTENT_VERSION, type RunState } from "./engine";
 import { FrameworkError, requireSafeNumber } from "./errors";
 import type { PolicyReference } from "./policies";
 
-export const SAVE_FORMAT_VERSION = 11;
+export const SAVE_FORMAT_VERSION = 12;
 export const FRAMEWORK_VERSION = "1.0.0";
 export const DEFAULT_CONTENT = {
   packId: "core:unspecified",
@@ -425,6 +425,28 @@ export const defaultSaveMigrations = new SaveMigrationRegistry()
           policyReferences: {
             ...(isRecord(run.policyReferences) ? run.policyReferences : {}),
             postEncounter: defaultPolicyReferences.postEncounter,
+          },
+        },
+      };
+    },
+  })
+  .register({
+    fromVersion: 11,
+    toVersion: 12,
+    migrate: (old) => {
+      const run = old.run as Readonly<Record<string, unknown>>;
+      const schedule = Array.isArray(run.schedule) ? run.schedule : [];
+      const position =
+        typeof run.schedulePosition === "number" ? run.schedulePosition : -1;
+      return {
+        ...old,
+        formatVersion: 12,
+        run: {
+          ...run,
+          stages: [{ id: "core:stage", ordinal: 1, encounters: schedule }],
+          progress: {
+            stagePosition: position < 0 ? -1 : 0,
+            encounterPositionInStage: position,
           },
         },
       };

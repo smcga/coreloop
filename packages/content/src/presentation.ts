@@ -187,6 +187,27 @@ export const createRunProgressViewModel = (
   total,
   text: `${pack.terminology.run.singular} ${current}/${total}`,
 });
+export interface StageProgressViewModel extends RunProgressViewModel {
+  readonly encounterCurrent: number;
+  readonly encounterTotal: number;
+}
+/** Generic, localisation-only stage progress; authoritative IDs never depend on copy. */
+export const createStageProgressViewModel = (
+  pack: LocalePresentationPack,
+  input: {
+    readonly stageCurrent: number;
+    readonly stageTotal: number;
+    readonly encounterCurrent: number;
+    readonly encounterTotal: number;
+  },
+): StageProgressViewModel => ({
+  label: pack.terminology.stage.singular,
+  current: input.stageCurrent,
+  total: input.stageTotal,
+  encounterCurrent: input.encounterCurrent,
+  encounterTotal: input.encounterTotal,
+  text: `${pack.terminology.stage.singular} ${input.stageCurrent}/${input.stageTotal}`,
+});
 export const createEncounterHeaderViewModel = (
   pack: LocalePresentationPack,
   input: {

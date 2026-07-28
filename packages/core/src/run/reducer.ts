@@ -36,6 +36,9 @@ import {
   type RunPolicyKey,
   type RunPolicySet,
   type EncounterReward,
+  adaptFlatScheduleToStage,
+  type StageScheduleEntry,
+  type StageContext,
 } from "../policies";
 
 export const CONTENT_VERSION = 3;
@@ -183,6 +186,11 @@ export interface RunState {
   readonly encounterNumber: number;
   readonly schedule: readonly EncounterScheduleEntry[];
   readonly schedulePosition: number;
+  readonly stages: readonly StageScheduleEntry[];
+  readonly progress: {
+    readonly stagePosition: number;
+    readonly encounterPositionInStage: number;
+  };
   readonly policyReferences: Readonly<Record<RunPolicyKey, PolicyReference>>;
   readonly currentEncounter: EncounterBrief | null;
   readonly currency: number;
@@ -262,6 +270,16 @@ export type RunCommand =
   | { readonly type: "continue" };
 type RunEventFact =
   | { readonly type: "run-started"; readonly seed: number }
+  | {
+      readonly type: "stage-started";
+      readonly stageId: string;
+      readonly ordinal: number;
+    }
+  | {
+      readonly type: "stage-completed";
+      readonly stageId: string;
+      readonly ordinal: number;
+    }
   | { readonly type: "encounter-prepared"; readonly brief: EncounterBrief }
   | { readonly type: "encounter-started"; readonly encounterId: string }
   | { readonly type: "rule-introduced"; readonly rule: RuleReference }
@@ -379,6 +397,12 @@ const definitionsOf = (
   configuration: RunConfiguration,
   gameplayModuleId = "core:unselected",
 ) => configuration.content?.listDefinitions({ gameplayModuleId }) ?? [];
+const stageContext = (
+  state: Pick<RunState, "stages" | "progress">,
+): StageContext | undefined => {
+  const stage = state.stages[state.progress.stagePosition];
+  return stage ? { stage, ...state.progress } : undefined;
+};
 const findDefinition = (configuration: RunConfiguration, id: string) => {
   try {
     return configuration.content?.getDefinition(id);
@@ -462,6 +486,8 @@ export function createInitialRunState(
     encounterNumber: 0,
     schedule: [],
     schedulePosition: -1,
+    stages: [],
+    progress: { stagePosition: -1, encounterPositionInStage: -1 },
     policyReferences: policyReferences(
       configuration.policies ?? defaultPolicies,
     ),
@@ -584,7 +610,7 @@ function generateShop(
   const eligible = eligibleCandidates(run, configuration);
   const remaining = [...eligible.candidates];
   const maximum = Math.min(
-    policies.shopGeneration.offerCount({ entry }),
+    policies.shopGeneration.offerCount({ entry, stage: stageContext(run) }),
     remaining.length,
   );
   // Exactly one RNG value is consumed per selected offer. Removing the selected
@@ -741,6 +767,15 @@ function beginRewards(
     },
     events: [
       ...events,
+      ...(completesRun && state.stages[state.progress.stagePosition]
+        ? [
+            {
+              type: "stage-completed" as const,
+              stageId: state.stages[state.progress.stagePosition]!.id,
+              ordinal: state.stages[state.progress.stagePosition]!.ordinal,
+            },
+          ]
+        : []),
       ...(completesRun ? [{ type: "run-completed" as const, currency }] : []),
     ],
   };
@@ -1219,13 +1254,22 @@ function handleCommand(
       }
       const seed = command.seed >>> 0,
         initialRng = createRandom(seed),
-        schedule = policies.schedule.createSchedule({
-          seed,
-          rng: initialRng,
-          gameplayModuleId: moduleId,
-        });
+        stageInput = { seed, rng: initialRng, gameplayModuleId: moduleId },
+        stages =
+          policies.schedule.createStages?.(stageInput) ??
+          adaptFlatScheduleToStage(
+            policies.schedule.createSchedule(stageInput),
+          ),
+        schedule = stages.flatMap((stage) => stage.encounters);
       if (
         schedule.length === 0 ||
+        stages.length === 0 ||
+        stages.some(
+          (stage, index) =>
+            !stage.id ||
+            stage.ordinal !== index + 1 ||
+            stage.encounters.length === 0,
+        ) ||
         schedule.some(
           (entry, index) =>
             !entry.id ||
@@ -1242,10 +1286,15 @@ function handleCommand(
           command,
           "Policy produced an invalid encounter schedule",
         );
+      const initialProgress = {
+        stagePosition: 0,
+        encounterPositionInStage: 0,
+      } as const;
       const generated = prepareEncounter(
         initialRng,
         schedule[0]!,
         configuration,
+        { stage: stages[0]!, ...initialProgress },
       );
       const next = {
         ...createInitialRunState(configuration),
@@ -1255,6 +1304,8 @@ function handleCommand(
         encounterNumber: schedule[0]!.ordinal,
         schedule,
         schedulePosition: 0,
+        stages,
+        progress: initialProgress,
         currentEncounter: generated.brief,
         currency: policies.start.initialCurrency({
           seed,
@@ -1275,6 +1326,11 @@ function handleCommand(
         state: next,
         events: [
           { type: "run-started", seed },
+          {
+            type: "stage-started",
+            stageId: stages[0]!.id,
+            ordinal: stages[0]!.ordinal,
+          },
           { type: "encounter-prepared", brief: generated.brief },
         ],
       };
@@ -1396,6 +1452,7 @@ function handleCommand(
           currency: resolved.state.currency,
           upgradeIds: state.inventory.upgradeIds,
           previousShopCount: state.shopCount,
+          stage: stageContext(state),
         });
       if (!encounterWon) {
         const pendingRoute = routeFor(false);
@@ -1434,6 +1491,7 @@ function handleCommand(
         score: resolved.score,
         target: resolved.target,
         rng: resolved.state.rng,
+        stage: stageContext(state),
       });
       const reward: EncounterReward =
         typeof policyReward === "number"
@@ -2123,7 +2181,25 @@ function handleCommand(
       const entry = state.schedule[schedulePosition];
       if (!entry)
         return reject(state, command, "No scheduled encounter remains");
-      const generated = prepareEncounter(state.rng, entry, configuration);
+      const currentStage = state.stages[state.progress.stagePosition]!;
+      const crossedStage =
+        state.progress.encounterPositionInStage + 1 >=
+        currentStage.encounters.length;
+      const progress = crossedStage
+        ? {
+            stagePosition: state.progress.stagePosition + 1,
+            encounterPositionInStage: 0,
+          }
+        : {
+            ...state.progress,
+            encounterPositionInStage:
+              state.progress.encounterPositionInStage + 1,
+          };
+      const nextStage = state.stages[progress.stagePosition]!;
+      const generated = prepareEncounter(state.rng, entry, configuration, {
+        stage: nextStage,
+        ...progress,
+      });
       return {
         state: {
           ...state,
@@ -2131,6 +2207,7 @@ function handleCommand(
           rng: generated.rng,
           encounterNumber: entry.ordinal,
           schedulePosition,
+          progress,
           currentEncounter: generated.brief,
           gameplaySession: null,
           encounterEffects: [],
@@ -2156,6 +2233,20 @@ function handleCommand(
               type: "instance-expired" as const,
               instanceId: item.instanceId,
             })),
+          ...(crossedStage
+            ? [
+                {
+                  type: "stage-completed" as const,
+                  stageId: currentStage.id,
+                  ordinal: currentStage.ordinal,
+                },
+                {
+                  type: "stage-started" as const,
+                  stageId: nextStage.id,
+                  ordinal: nextStage.ordinal,
+                },
+              ]
+            : []),
           { type: "encounter-prepared", brief: generated.brief },
         ],
       };

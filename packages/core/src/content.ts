@@ -6,6 +6,7 @@ export interface ContentQueryContext {
   readonly capabilities?: readonly string[];
   readonly encounterNumber?: number;
   readonly special?: boolean;
+  readonly unlockedIds?: readonly string[];
 }
 export interface RuntimeContentDefinition {
   readonly id: string;
@@ -34,6 +35,7 @@ export interface RuntimeContentDefinition {
   readonly occupiesCapacity: boolean;
   readonly initialStoredValues?: Readonly<Record<string, number>>;
   readonly triggers?: readonly EffectTrigger[];
+  readonly requiredUnlockIds?: readonly string[];
   readonly use?:
     | { readonly type: "encounter-effect" }
     | { readonly type: "custom"; readonly handler: RuleReference };
@@ -99,12 +101,16 @@ export interface RuntimeStartingLoadout {
   readonly ownedDefinitionIds: readonly string[];
   readonly capacities: Readonly<Record<string, number>>;
   readonly upgradeIds: readonly string[];
+  readonly requiredUnlockIds?: readonly string[];
 }
 /** The only authored-content boundary known by the headless run engine. */
 export interface RuntimeContentProvider {
   readonly identity: { readonly packId: string; readonly packVersion: number };
   getDefinition(id: string): RuntimeContentDefinition;
   getStartingLoadout(id: string): RuntimeStartingLoadout;
+  listStartingLoadouts?(context: {
+    readonly unlockedIds: readonly string[];
+  }): readonly RuntimeStartingLoadout[];
   listDefinitions(
     context: ContentQueryContext,
   ): readonly RuntimeContentDefinition[];

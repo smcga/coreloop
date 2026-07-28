@@ -13,6 +13,23 @@ export interface EncounterScheduleEntry {
   readonly kind: string;
   readonly rules: readonly RuleReference[];
 }
+export interface StageScheduleEntry {
+  readonly id: string;
+  readonly ordinal: number;
+  readonly encounters: readonly EncounterScheduleEntry[];
+  readonly metadata?:
+    | null
+    | boolean
+    | number
+    | string
+    | readonly unknown[]
+    | Readonly<Record<string, unknown>>;
+}
+export interface StageContext {
+  readonly stage: StageScheduleEntry;
+  readonly stagePosition: number;
+  readonly encounterPositionInStage: number;
+}
 export interface RunStartPolicy extends VersionedPolicy {
   initialCurrency(context: {
     readonly seed: number;
@@ -26,16 +43,24 @@ export interface EncounterSchedulePolicy extends VersionedPolicy {
     readonly rng: RandomState;
     readonly gameplayModuleId: string;
   }): readonly EncounterScheduleEntry[];
+  /** Stage-aware policies use this; flat policies are adapted to one stage. */
+  createStages?(context: {
+    readonly seed: number;
+    readonly rng: RandomState;
+    readonly gameplayModuleId: string;
+  }): readonly StageScheduleEntry[];
 }
 export interface TargetPolicy extends VersionedPolicy {
   /** Policy RNG is an immutable snapshot. Target calculation never advances run RNG. */
   targetForEncounter(context: {
     readonly entry: EncounterScheduleEntry;
     readonly rng: RandomState;
+    readonly stage?: StageContext | undefined;
   }): number;
   requirementsForEncounter?(context: {
     readonly entry: EncounterScheduleEntry;
     readonly rng: RandomState;
+    readonly stage?: StageContext | undefined;
   }): import("./engine").EncounterRequirements;
 }
 export type EncounterReward =
@@ -49,10 +74,14 @@ export interface RewardPolicy extends VersionedPolicy {
     readonly score: number;
     readonly target: number;
     readonly rng: RandomState;
+    readonly stage?: StageContext | undefined;
   }): number | EncounterReward;
 }
 export interface ShopGenerationPolicy extends VersionedPolicy {
-  offerCount(context: { readonly entry: EncounterScheduleEntry }): number;
+  offerCount(context: {
+    readonly entry: EncounterScheduleEntry;
+    readonly stage?: StageContext | undefined;
+  }): number;
 }
 export interface ShopPricingPolicy extends VersionedPolicy {
   offerPrice(context: {
@@ -136,7 +165,13 @@ export interface PostEncounterContext {
   readonly currency: number;
   readonly upgradeIds: readonly string[];
   readonly previousShopCount: number;
+  readonly stage?: StageContext | undefined;
 }
+
+export const adaptFlatScheduleToStage = (
+  encounters: readonly EncounterScheduleEntry[],
+  id = "core:stage",
+): readonly StageScheduleEntry[] => [{ id, ordinal: 1, encounters }];
 export interface PostEncounterPolicy extends VersionedPolicy {
   /** Routing is pure: the policy is deliberately not given the run RNG. */
   destination(context: PostEncounterContext): PostEncounterDestination;

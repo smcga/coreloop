@@ -22,6 +22,33 @@ const broken = (change: Partial<ContentPack>): ContentPack => ({
 });
 
 describe("content-pack validation and index", () => {
+  it("filters profile-gated definitions without changing authored data", () => {
+    const gated = new ContentRegistry({
+      ...thresholdLabContentPack,
+      definitions: thresholdLabContentPack.definitions.map(
+        (definition, index) =>
+          index === 0
+            ? { ...definition, requiredUnlockIds: ["test:unlocked"] }
+            : definition,
+      ),
+    });
+    const locked = createRuntimeContentProvider(gated);
+    const unlocked = createRuntimeContentProvider(gated, {
+      unlockedIds: ["test:unlocked"],
+    });
+    const id = thresholdLabContentPack.definitions[0]!.id;
+    const query = { gameplayModuleId: "threshold-lab:combination-grid" };
+    expect(locked.listDefinitions(query).some((item) => item.id === id)).toBe(
+      false,
+    );
+    expect(unlocked.listDefinitions(query).some((item) => item.id === id)).toBe(
+      true,
+    );
+    expect(thresholdLabContentPack.definitions[0]).not.toHaveProperty(
+      "requiredUnlockIds",
+    );
+  });
+
   it("adapts authored order and loadouts without leaking presentation", () => {
     const provider = createRuntimeContentProvider(registry);
     const definitions = provider.listDefinitions({
