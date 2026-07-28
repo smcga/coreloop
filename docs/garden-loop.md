@@ -97,6 +97,25 @@ same configuration, registry, projection, provider and coordinator as the live
 page; fixed-seed reports expose offers, acquisitions, triggers and attributed
 score contributions.
 
+## Proof layers
+
+Garden's tests deliberately retain three complementary levels of diagnosis:
+
+- focused state-level tests isolate projection and generic host/attachment sale
+  semantics with small, directly authored states;
+- headless session integration tests drive the five-session schedule, rewards,
+  shops, persistence and coordinator without a browser;
+- the end-to-end command-path scenarios in
+  `apps/garden-loop/tests/command-path.test.ts` acquire Bee Friend from a stable
+  shop offer, target Deep Rooted through its authored reward, and use Watering
+  Can through the public consumable command before asserting their mechanics.
+
+The last layer never injects an offer, phase, inventory instance, attachment
+relationship or pending effect. It records the real commands and gameplay
+actions, checks stable generated IDs, currency and RNG boundaries, continues
+across save/load, and verifies both a matching replay and a deliberate replay
+divergence.
+
 ## Mobile verification
 
 Run `npm run dev --workspace @core-loop/garden-loop -- --host 0.0.0.0` and open
