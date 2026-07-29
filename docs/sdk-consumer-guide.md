@@ -1,6 +1,6 @@
 # Build a game as an SDK consumer
 
-The executable companion is [`examples/consumer-game`](../examples/consumer-game), outside the npm workspace graph. `npm run consumer:validate` builds package tarballs, installs them in a temporary clean directory, and runs its typecheck, tests, and production build. Use Node.js 22.
+The executable companion is [`examples/consumer-game`](../examples/consumer-game), outside the npm workspace graph. `npm run consumer:validate` builds package tarballs, installs them in a temporary clean directory, and runs its typecheck, tests, and production build. CI runs this clean-consumer check before the complete workspace build; `build:all` builds SDK artefacts before applications that resolve their package exports. Use Node.js 22.
 
 ## 1. Install the packages
 

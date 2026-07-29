@@ -22,4 +22,13 @@ describe("public SDK package manifests", () => {
       expect(manifest.engines?.node).toBe(">=22 <23");
     });
   }
+
+  it("builds package artefacts before workspace applications consume them", () => {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../../../package.json", import.meta.url), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    expect(manifest.scripts?.["build:all"]).toBe(
+      "npm run build:packages && npm run build --workspaces --if-present",
+    );
+  });
 });
