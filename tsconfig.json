@@ -2,7 +2,14 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "vitest/globals"]
+    "types": ["vite/client", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@core-loop/core": ["packages/core/src/index.ts"],
+      "@core-loop/content": ["packages/content/src/index.ts"],
+      "@core-loop/simulation": ["packages/simulation/src/index.ts"],
+      "@core-loop/phaser": ["packages/phaser/src/index.ts"]
+    }
   },
   "include": [
     "apps/**/*.ts",

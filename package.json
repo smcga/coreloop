@@ -24,6 +24,8 @@
     "simulate": "vite-node tools/simulate.ts",
     "simulate:smoke": "vitest run packages/simulation/tests/simulation.test.ts -t \"CI smoke\"",
     "build:all": "npm run build --workspaces --if-present",
+    "build:packages": "node tools/build-packages.mjs",
+    "consumer:validate": "node tools/validate-consumer.mjs",
     "check:no-binaries": "node tools/check-no-binaries.mjs",
     "docs:check": "node tools/check-doc-links.mjs",
     "create-game": "node tools/create-game.mjs"
