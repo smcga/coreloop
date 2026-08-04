@@ -1,0 +1,24 @@
+{
+  "name": "core-loop-clean-consumer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@core-loop/core": "0.1.0",
+    "@core-loop/content": "0.1.0",
+    "@core-loop/simulation": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.6",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  }
+}

@@ -1,7 +1,20 @@
 {
   "name": "@core-loop/core",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "exports": "./src/index.ts"
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "build": "node ../../tools/build-one-package.mjs core"
+  }
 }

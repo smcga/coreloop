@@ -1,8 +1,10 @@
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { workspaceSourceAliases } from "../../tools/vite-source-aliases";
 
 export default defineConfig({
   base: "/coreloop/",
+  resolve: { alias: workspaceSourceAliases },
   define: {
     __APP_VERSION__: JSON.stringify(
       process.env.GITHUB_SHA?.slice(0, 7) ?? "development",
