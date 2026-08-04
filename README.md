@@ -83,6 +83,7 @@ Start with the [`documentation index`](docs/getting-started.md), or create a tex
 
 - [`AGENTS.md`](AGENTS.md) — instructions and constraints for coding agents
 - [`docs/architecture.md`](docs/architecture.md) — boundaries and core design
+- [`docs/sdk-consumer-guide.md`](docs/sdk-consumer-guide.md) — build a game from packaged public SDK entry points
 - [`docs/threshold-lab.md`](docs/threshold-lab.md) — playable test-bed specification
 - [`docs/development.md`](docs/development.md) — expected development and verification workflow
 - [`docs/effects.md`](docs/effects.md) — deterministic triggers, operations, chaining, and score ledger
